@@ -231,8 +231,9 @@ def run_http() -> None:
 
     async def check_key(scope, receive, send):
         """Allow only requests with  ?key=API_KEY  or  Authorization: Bearer API_KEY.
-        The random one-time links (/u/..., /v/...) are their own key."""
-        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/")):
+        The random one-time links (/u/..., /v/...) are their own key. /.well-known/ is left open so that
+        claude.ai's connector check gets a plain 404 = "no OAuth login needed" (the key is in the URL)."""
+        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/.well-known/")):
             headers = dict(scope["headers"])
             query = scope.get("query_string", b"").decode()
             if headers.get(b"authorization", b"").decode() != f"Bearer {api_key}" \
