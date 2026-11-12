@@ -1,4 +1,4 @@
-# Render blueprint: free web service that sleeps when idle and wakes on a request
+# Render: free web service that sleeps when idle and wakes on a request
 services:
   - type: web
     name: youtube-mcp
@@ -9,7 +9,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      - key: API_KEY            # your secret password (fill in on Render)
+      - key: API_KEY            # your secret password; the PC sends it
         sync: false
-      - key: YOUTUBE_TOKEN_MAIN # contents of ~/.youtube-mcp/tokens/main.json
+      - key: YOUTUBE_TOKEN_MAIN # whole text of ~/.youtube-mcp/tokens/main.json
+        sync: false
+      - key: SARVAM_API_KEY     # Sarvam AI key, for /voice
         sync: false

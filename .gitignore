@@ -3,7 +3,6 @@ __pycache__/
 *.json
 .venv/
 *.mp4
+*.wav
 cover.jpg
-shorts/work/
-shorts/.cloud_env
-!shorts/template/script.json
+shorts/
