@@ -3,5 +3,5 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY youtube_mcp.py .
+COPY youtube_mcp.py sarvam_voice.py ./
 CMD ["python", "youtube_mcp.py", "http"]

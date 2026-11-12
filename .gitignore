@@ -2,3 +2,5 @@ apikey.txt
 __pycache__/
 *.json
 .venv/
+*.mp4
+cover.jpg

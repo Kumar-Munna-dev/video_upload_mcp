@@ -9,6 +9,8 @@ On the cloud there is no browser and no saved token file, so the token is
 given through an environment variable instead:
     YOUTUBE_TOKEN_MAIN   = contents of ~/.youtube-mcp/tokens/main.json
     API_KEY              = any secret password; clients must send it
+    SARVAM_API_KEY       = Sarvam AI key, for the make_voice tool
+                           (on your PC it can live in ~/.youtube-mcp/sarvam_key.txt)
 """
 import json
 import os
@@ -22,6 +24,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from mcp.server.mcpserver import MCPServer
+
+import sarvam_voice
 
 BASE = Path.home() / ".youtube-mcp"
 CLIENT_SECRET = BASE / "client_secret.json"   # OAuth "Desktop app" JSON from Google Cloud
@@ -131,6 +135,26 @@ def upload_video(
     finally:
         if path and path != video:       # delete the downloaded temp file
             Path(path).unlink(missing_ok=True)
+
+
+@mcp.tool()
+def make_voice(text: str, speaker: str = "shubh", pace: float = 1.0, name: str = "voice") -> dict:
+    """Make a real-sounding Hindi voice-over with Sarvam AI and save it as a WAV file.
+
+    text: what to say (Hindi in Devanagari works best; English words are fine)
+    speaker: shubh, aditya, rahul, rohan, amit, varun (male)
+             priya, neha, pooja, simran, kavya, ritu (female)
+    pace: 0.5 (slow) to 2.0 (fast), 1.0 = normal
+    name: file name, saved as ~/.youtube-mcp/voices/<name>.wav
+    """
+    try:
+        wav = sarvam_voice.speak(text, speaker, pace)
+        out = BASE / "voices" / f"{Path(name).stem}.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(wav)
+        return {"ok": True, "file": str(out), "seconds": sarvam_voice.seconds(wav), "speaker": speaker}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @mcp.tool()

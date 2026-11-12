@@ -153,3 +153,13 @@ Wahi step 4 wala command dobara chalao.
   Hamesha ke liye: OAuth consent screen ko **"In production"** par publish karo.
 - Cloud Run me free tier hai; koi request na ho toh server khud band (0 cost) ho jata hai.
 - API key kisi ko mat do — jiske paas key hai woh aapke channel par upload kar sakta hai.
+
+---
+
+# Sarvam AI voice (`make_voice` tool)
+
+Real-sounding Hindi voice-over. Tool: `make_voice(text, speaker="shubh", pace=1.0, name="voice")` → `~/.youtube-mcp/voices/<name>.wav`
+
+- **Male:** shubh, aditya, rahul, rohan, amit, varun · **Female:** priya, neha, pooja, simran, kavya, ritu
+- **API key:** on your PC, put it in `C:\Users\<you>\.youtube-mcp\sarvam_key.txt`. On Render, add the environment variable `SARVAM_API_KEY`.
+- Quick test: `python sarvam_voice.py "नमस्ते दोस्तों!" shubh` creates `hello.wav`
