@@ -16,16 +16,21 @@ if [ "${NODE_MAJOR:-0}" -lt 22 ]; then npm install -g n >/dev/null 2>&1 && $SUDO
 node -v
 
 echo "== Python packages =="
-python3 -m pip install -q numpy scipy -r requirements.txt 2>/dev/null || python3 -m pip install -q --break-system-packages numpy scipy -r requirements.txt
+# --ignore-installed: cloud images have Debian-installed packages (e.g. PyJWT) that pip can't uninstall
+python3 -m pip install -q numpy scipy -r requirements.txt 2>/dev/null \
+  || python3 -m pip install -q --break-system-packages --ignore-installed numpy scipy -r requirements.txt
 
 echo "== Chrome (headless) =="
-CHROME=""
-for c in google-chrome google-chrome-stable chromium chromium-browser; do
-  p=$(command -v $c || true); [ -n "$p" ] && "$p" --version >/dev/null 2>&1 && CHROME="$p" && break
-done
+find_playwright_chrome() { ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | tail -1; }
+CHROME=$(find_playwright_chrome)                       # Claude cloud images ship Chromium in /opt/pw-browsers
+if [ -z "$CHROME" ]; then
+  for c in google-chrome google-chrome-stable chromium chromium-browser; do
+    p=$(command -v $c || true); [ -n "$p" ] && "$p" --version >/dev/null 2>&1 && CHROME="$p" && break
+  done
+fi
 if [ -z "$CHROME" ]; then
   npx -y playwright@1.49.1 install --with-deps chromium >/dev/null 2>&1 || npx -y playwright@1.49.1 install chromium
-  CHROME=$(ls -d ~/.cache/ms-playwright/chromium-*/chrome-linux/chrome 2>/dev/null | tail -1)
+  CHROME=$(find_playwright_chrome)
 fi
 [ -n "$CHROME" ] || { echo "NO CHROME FOUND"; exit 1; }
 echo "export CHROME='$CHROME'" > shorts/.cloud_env
