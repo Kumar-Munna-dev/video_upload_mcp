@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -30,7 +31,9 @@ import sarvam_voice
 BASE = Path.home() / ".youtube-mcp"
 CLIENT_SECRET = BASE / "client_secret.json"   # OAuth "Desktop app" JSON from Google Cloud
 TOKENS = BASE / "tokens"                       # one token file per account
+VOICES = BASE / "voices"                       # voice files made by make_voice
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
+ON_RENDER = bool(os.environ.get("RENDER"))     # Render sets RENDER=true; on your PC it is not set
 
 mcp = MCPServer("youtube-uploader")
 
@@ -83,14 +86,29 @@ def youtube(account: str):
 def get_video_file(video: str) -> str:
     """If `video` is a web link, download it to a temp file. Return a local path."""
     if video.startswith(("http://", "https://")):
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
-        with urllib.request.urlopen(video) as r, tmp:
-            while chunk := r.read(1024 * 1024):
-                tmp.write(chunk)
-        return tmp.name
+        fd, tmp = tempfile.mkstemp(suffix=".mp4")
+        try:
+            with open(fd, "wb") as f, urllib.request.urlopen(video) as r:
+                while chunk := r.read(1024 * 1024):   # 1 MB at a time: low memory
+                    f.write(chunk)
+        except Exception:
+            Path(tmp).unlink(missing_ok=True)        # don't leave a half download behind
+            raise
+        return tmp
     if not Path(video).is_file():
         raise FileNotFoundError(f"File not found: {video}")
     return video
+
+
+def delete_voice_files(older_than_hours: float = 0) -> int:
+    """Delete voice files made by make_voice (all of them, or only the old ones). Returns how many."""
+    cutoff = time.time() - older_than_hours * 3600
+    count = 0
+    for f in VOICES.glob("*.wav"):
+        if f.stat().st_mtime <= cutoff:
+            f.unlink(missing_ok=True)
+            count += 1
+    return count
 
 
 # ---------------------------------------------------------------- MCP tools
@@ -133,8 +151,10 @@ def upload_video(
     except Exception as e:
         return {"ok": False, "error": str(e)}
     finally:
-        if path and path != video:       # delete the downloaded temp file
+        if path and path != video:       # delete the downloaded video
             Path(path).unlink(missing_ok=True)
+        if ON_RENDER:                    # keep the server clean: delete voice files too
+            delete_voice_files()
 
 
 @mcp.tool()
@@ -147,10 +167,13 @@ def make_voice(text: str, speaker: str = "male", pace: float = 1.0, name: str = 
              ritu_hi_reels, ishita_hi_ads (female) ... any Bulbul V4 Flash Hindi voice
     pace: 0.5 (slow) to 2.0 (fast), 1.0 = normal
     name: file name, saved as ~/.youtube-mcp/voices/<name>.wav
+          (on Render, voice files are deleted after 1 hour and after every video upload)
     """
     try:
         wav = sarvam_voice.speak(text, speaker, pace)
-        out = BASE / "voices" / f"{Path(name).stem}.wav"
+        if ON_RENDER:
+            delete_voice_files(older_than_hours=1)
+        out = VOICES / f"{Path(name).stem}.wav"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(wav)
         return {"ok": True, "file": str(out), "seconds": sarvam_voice.seconds(wav), "speaker": speaker}
