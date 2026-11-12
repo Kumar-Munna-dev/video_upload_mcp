@@ -45,7 +45,14 @@ def login(account: str) -> None:
 
 
 def load_token(account: str) -> str | None:
-    """Token JSON text: first from env var YOUTUBE_TOKEN_<ACCOUNT> (cloud), else from file (PC)."""
+    """Token JSON text, looked up in this order:
+    1. Render "Secret File" named <account>.json   (/etc/secrets/main.json)
+    2. env var YOUTUBE_TOKEN_<ACCOUNT>              (YOUTUBE_TOKEN_MAIN)
+    3. file on your PC                              (~/.youtube-mcp/tokens/main.json)
+    """
+    secret_file = Path("/etc/secrets") / f"{account}.json"
+    if secret_file.exists():
+        return secret_file.read_text()
     env_value = os.environ.get(f"YOUTUBE_TOKEN_{account.upper()}")
     if env_value:
         return env_value
@@ -58,7 +65,12 @@ def youtube(account: str):
     token = load_token(account)
     if not token:
         raise RuntimeError(f"Account '{account}' not logged in. Run: python youtube_mcp.py auth {account}")
-    creds = Credentials.from_authorized_user_info(json.loads(token), SCOPES)
+    try:
+        info = json.loads(token)
+    except ValueError:
+        raise RuntimeError(f"Token for '{account}' is not valid JSON. It must be the WHOLE main.json file, "
+                           "starting with {\"token\": and ending with }") from None
+    creds = Credentials.from_authorized_user_info(info, SCOPES)
     if not creds.valid:
         creds.refresh(Request())   # new access token is kept in memory only
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
