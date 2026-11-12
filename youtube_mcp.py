@@ -233,6 +233,10 @@ def run_http() -> None:
         """Allow only requests with  ?key=API_KEY  or  Authorization: Bearer API_KEY.
         The random one-time links (/u/..., /v/...) are their own key. /.well-known/ is left open so that
         claude.ai's connector check gets a plain 404 = "no OAuth login needed" (the key is in the URL)."""
+        if scope["type"] == "http" and scope["path"].startswith(f"/{api_key}/"):
+            # key inside the path: https://.../<API_KEY>/mcp  (for connectors that drop ?key=)
+            scope = {**scope, "path": scope["path"][len(api_key) + 1:], "raw_path": None}
+            return await app(scope, receive, send)
         if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/.well-known/")):
             headers = dict(scope["headers"])
             query = scope.get("query_string", b"").decode()
