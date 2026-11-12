@@ -5,7 +5,7 @@ API key (never put it in code):
     PC:     ~/.youtube-mcp/sarvam_key.txt     (just the key, one line)
     Cloud:  environment variable SARVAM_API_KEY
 
-Try it:   python sarvam_voice.py "नमस्ते दोस्तों!"  shubh   -> hello.wav
+Try it:   python sarvam_voice.py "नमस्ते दोस्तों!"  male   -> hello.wav
 """
 import base64
 import io
@@ -18,10 +18,19 @@ import wave
 from pathlib import Path
 
 URL = "https://api.sarvam.ai/text-to-speech"
-MODEL = "bulbul:v3"
-MALE, FEMALE = "shubh", "priya"
-SPEAKERS = ["shubh", "aditya", "rahul", "rohan", "amit", "varun",      # male
-            "priya", "neha", "pooja", "simran", "kavya", "ritu"]        # female
+MODEL = "bulbul:v4-flash"
+MALE, FEMALE = "shubh_hi_stories_dramatic", "simran_hi_narration"
+# A few good Hindi voices. Any other Bulbul V4 Flash voice name (e.g. ritu_hi_reels) also works.
+GOOD_VOICES = {
+    "male": MALE, "female": FEMALE,
+    "shubh_hi_stories_dramatic": "male, story / riddle (default)",
+    "shubh_hi_stories_mixed": "male, calm story",
+    "mukul_hi_suspense": "male, suspense / mystery",
+    "anand_hi_documentary": "male, documentary",
+    "simran_hi_narration": "female, narration (default female)",
+    "ritu_hi_reels": "female, lively reels",
+    "ishita_hi_ads": "female, ads",
+}
 
 
 def api_key() -> str:
@@ -43,7 +52,10 @@ def _one_request(text: str, speaker: str, pace: float, language: str) -> bytes:
         with urllib.request.urlopen(req, timeout=120) as r:
             data = json.load(r)
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Sarvam error {e.code}: {e.read().decode(errors='replace')[:300]}") from None
+        msg = e.read().decode(errors="replace")
+        if "not recognized" in msg:
+            raise RuntimeError(f"Unknown voice '{speaker}'. Try: {', '.join(k for k in GOOD_VOICES if '_' in k)}") from None
+        raise RuntimeError(f"Sarvam error {e.code}: {msg[:300]}") from None
     return base64.b64decode("".join(data["audios"]))
 
 
@@ -59,9 +71,8 @@ def _chunks(text: str, limit: int = 2000) -> list[str]:
 
 
 def speak(text: str, speaker: str = MALE, pace: float = 1.0, language: str = "hi-IN") -> bytes:
-    """Text -> WAV bytes. Long text is sent in pieces and joined."""
-    if speaker not in SPEAKERS:
-        raise ValueError(f"Unknown speaker '{speaker}'. Choose one of: {', '.join(SPEAKERS)}")
+    """Text -> WAV bytes. speaker: "male", "female" or a full voice name. Long text is sent in pieces and joined."""
+    speaker = {"male": MALE, "female": FEMALE}.get(speaker, speaker)
     pieces = [_one_request(c, speaker, pace, language) for c in _chunks(text)]
     if len(pieces) == 1:
         return pieces[0]

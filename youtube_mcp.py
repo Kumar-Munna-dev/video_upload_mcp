@@ -138,12 +138,13 @@ def upload_video(
 
 
 @mcp.tool()
-def make_voice(text: str, speaker: str = "shubh", pace: float = 1.0, name: str = "voice") -> dict:
-    """Make a real-sounding Hindi voice-over with Sarvam AI and save it as a WAV file.
+def make_voice(text: str, speaker: str = "male", pace: float = 1.0, name: str = "voice") -> dict:
+    """Make a real-sounding Hindi voice-over with Sarvam AI (Bulbul V4 Flash) and save it as a WAV file.
 
     text: what to say (Hindi in Devanagari works best; English words are fine)
-    speaker: shubh, aditya, rahul, rohan, amit, varun (male)
-             priya, neha, pooja, simran, kavya, ritu (female)
+    speaker: "male" (shubh_hi_stories_dramatic) or "female" (simran_hi_narration), or a full voice name:
+             shubh_hi_stories_mixed, mukul_hi_suspense, anand_hi_documentary (male),
+             ritu_hi_reels, ishita_hi_ads (female) ... any Bulbul V4 Flash Hindi voice
     pace: 0.5 (slow) to 2.0 (fast), 1.0 = normal
     name: file name, saved as ~/.youtube-mcp/voices/<name>.wav
     """
