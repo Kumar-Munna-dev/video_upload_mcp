@@ -2,7 +2,7 @@
 Your PC talks to the Render server: make a voice, upload a video. Standard library only.
 
   python render_client.py voice "नमस्ते दोस्तों!" out.wav [male|female|<voice name>]
-  python render_client.py upload video.mp4 info.json        info.json = {"title", "description", "tags", "privacy"}
+  python render_client.py upload video.mp4 info.json        info.json = {"title", "description", "tags", "privacy", "category"}
 
 Server: env YT_SERVER (default below). API key: env API_KEY, or the file apikey.txt next to this script,
 or ~/.youtube-mcp/api_key.txt. No YouTube token or Sarvam key is needed on the PC.
@@ -46,10 +46,12 @@ def voice(text: str, speaker: str = "male", pace: float = 1.0) -> bytes:
     return _post("/voice", body, "application/json")
 
 
-def upload(video: str, title: str, description: str = "", tags=(), privacy: str = "private") -> dict:
+def upload(video: str, title: str, description: str = "", tags=(), privacy: str = "private",
+           category: str = "22") -> dict:
     """Send an MP4 to the server, which uploads it to YouTube and deletes it. Returns {ok, url, ...}."""
     query = urllib.parse.urlencode({"title": title, "description": description,
-                                    "tags": ",".join(tags), "privacy": privacy})
+                                    "tags": ",".join(tags), "privacy": privacy,
+                                    "category": category})
     size = os.path.getsize(video)
     with open(video, "rb") as f:
         return json.loads(_post(f"/upload?{query}", f, "video/mp4", size))
@@ -64,6 +66,6 @@ if __name__ == "__main__":
     elif len(a) == 3 and a[0] == "upload":
         info = json.loads(Path(a[2]).read_text(encoding="utf-8"))
         print(json.dumps(upload(a[1], info["title"], info.get("description", ""), info.get("tags", []),
-                                info.get("privacy", "private")), ensure_ascii=False))
+                                info.get("privacy", "private"), str(info.get("category", "22"))), ensure_ascii=False))
     else:
         print(__doc__)

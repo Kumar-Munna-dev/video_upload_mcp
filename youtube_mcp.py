@@ -92,10 +92,10 @@ def youtube(account: str = "main"):
 
 
 def upload_file(path: str, title: str, description: str = "", tags: list[str] | None = None,
-                privacy: str = "private", account: str = "main") -> dict:
-    """Upload a video file to YouTube."""
+                privacy: str = "private", account: str = "main", category: str = "22") -> dict:
+    """Upload a video file to YouTube. category: 22 People & Blogs, 27 Education, 24 Entertainment, 23 Comedy."""
     try:
-        body = {"snippet": {"title": title[:100], "description": description, "tags": tags or [], "categoryId": "22"},
+        body = {"snippet": {"title": title[:100], "description": description, "tags": tags or [], "categoryId": str(category or "22")},
                 "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}}
         media = MediaFileUpload(path, chunksize=4 * 1024 * 1024, resumable=True)
         request = youtube(account).videos().insert(part="snippet,status", body=body, media_body=media)
@@ -142,12 +142,15 @@ def make_voice(text: str, speaker: str = "male", pace: float = 1.0) -> dict:
 
 
 @mcp.tool()
-def upload_link(title: str, description: str = "", tags: list[str] | None = None, privacy: str = "private") -> dict:
+def upload_link(title: str, description: str = "", tags: list[str] | None = None, privacy: str = "private",
+                category: str = "22") -> dict:
     """Get a one-time link to upload a finished MP4 to YouTube (Pixel Katha 3D). Works for 1 hour.
     Then send the file:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
     The server uploads it to YouTube, deletes it, and answers with the YouTube link.
-    title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private"""
-    token = _new_token(UPLOADS, meta={"title": title, "description": description, "tags": tags or [], "privacy": privacy})
+    title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private
+    category: 22 People & Blogs (default), 27 Education, 24 Entertainment, 23 Comedy"""
+    token = _new_token(UPLOADS, meta={"title": title, "description": description, "tags": tags or [], "privacy": privacy,
+                                      "category": category})
     url = f"{PUBLIC_URL}/u/{token}"
     return {"ok": True, "upload_url": url,
             "how": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
@@ -194,7 +197,7 @@ def run_http() -> None:
                     f.write(chunk)
             result = await asyncio.to_thread(upload_file, tmp, meta.get("title", ""), meta.get("description", ""),
                                              meta.get("tags", []), meta.get("privacy", "private"),
-                                             meta.get("account", "main"))
+                                             meta.get("account", "main"), meta.get("category", "22"))
         finally:
             Path(tmp).unlink(missing_ok=True)
         return JSONResponse(result, 200 if result["ok"] else 500)
@@ -205,7 +208,7 @@ def run_http() -> None:
         tags = [t.strip() for t in q.get("tags", "").split(",") if t.strip()]
         return await receive_and_upload(request, {"title": q.get("title", ""), "description": q.get("description", ""),
                                                   "tags": tags, "privacy": q.get("privacy", "private"),
-                                                  "account": q.get("account", "main")})
+                                                  "account": q.get("account", "main"), "category": q.get("category", "22")})
 
     async def upload_by_link(request):
         """One-time link from the upload_link tool: no key needed."""
