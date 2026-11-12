@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 *.mp4
 cover.jpg
+shorts/work/
+shorts/.cloud_env
