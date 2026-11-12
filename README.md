@@ -7,7 +7,14 @@ Videos are made **on your PC**. This small server on **Render** does only two jo
 | voice | `POST /voice` | Hindi voice-over with Sarvam AI (Bulbul V4 Flash) → WAV |
 | upload | `POST /upload` | uploads your MP4 to YouTube, then deletes it from the server |
 
-Claude can also use it as an MCP server at `/mcp` (tools: `upload_video` from a link, `channel_info`).
+Claude can also use it as an MCP **connector** at `/mcp`, so **any chat** (Code tab, Cowork, claude.ai) can use it:
+- `make_voice(text, speaker)` → a WAV download link (1 hour)
+- `upload_link(title, description, tags, privacy)` → a one-time link; the chat sends the MP4 with
+  `curl -X POST --data-binary @video.mp4 "<link>"`. The server uploads it to YouTube and deletes it.
+- `upload_video(video_url, ...)`, `channel_info()`
+
+To add it on claude.ai, go to Settings → Connectors → Add custom connector and use the URL
+`https://youtube-mcp-5wk1.onrender.com/mcp?key=<API_KEY>`.
 All secrets live on Render. The PC only needs the API key.
 
 ## Files

@@ -7,7 +7,10 @@ YouTube + voice server. Runs on Render; your PC makes the videos and calls it.
 Web endpoints (each needs the API key: header "Authorization: Bearer <API_KEY>" or ?key=<API_KEY>):
   POST /voice    JSON {"text", "speaker": "male", "pace": 1.0}            -> WAV audio (Sarvam AI)
   POST /upload?title=..&description=..&tags=a,b&privacy=private   body = MP4 bytes -> JSON {ok, url}
-  /mcp           MCP tools for Claude: upload_video (from a link), channel_info
+  /mcp           MCP tools for Claude (add as a connector, so ANY chat can use it):
+                 make_voice -> voice download link · upload_link -> one-time link to POST the MP4 to
+                 upload_video (from a public link) · channel_info
+Links made by make_voice / upload_link need no key, are random, work for 1 hour and only once (upload).
 
 Render environment variables: API_KEY, YOUTUBE_TOKEN_MAIN (whole main.json), SARVAM_API_KEY
 Nothing is kept on the server: every video is deleted right after its upload.
@@ -15,8 +18,10 @@ Nothing is kept on the server: every video is deleted right after its upload.
 import asyncio
 import json
 import os
+import secrets
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -30,8 +35,29 @@ import sarvam_voice
 
 BASE = Path.home() / ".youtube-mcp"
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
+PUBLIC_URL = os.environ.get("RENDER_EXTERNAL_URL", "http://127.0.0.1:8080").rstrip("/")   # Render sets this
+LINK_LIFE = 3600                     # seconds a voice / upload link stays valid
+VOICES: dict[str, dict] = {}         # token -> {"wav", "expires"}   (in memory, max 20)
+UPLOADS: dict[str, dict] = {}        # token -> {"meta", "expires"}  (one-time upload links)
 
 mcp = MCPServer("youtube-uploader")
+
+
+def _new_token(store: dict, **item) -> str:
+    """Forget expired links, add a new one, return its random token."""
+    now = time.time()
+    for k in [k for k, v in store.items() if v["expires"] < now]:
+        store.pop(k)
+    while len(store) >= 20:
+        store.pop(next(iter(store)))
+    token = secrets.token_urlsafe(24)
+    store[token] = {**item, "expires": now + LINK_LIFE}
+    return token
+
+
+def _take(store: dict, token: str, once: bool = False):
+    item = store.pop(token, None) if once else store.get(token)
+    return item if item and item["expires"] >= time.time() else None
 
 
 # ---------------------------------------------------------------- YouTube
@@ -103,6 +129,31 @@ def upload_video(video_url: str, title: str, description: str = "", tags: list[s
 
 
 @mcp.tool()
+def make_voice(text: str, speaker: str = "male", pace: float = 1.0) -> dict:
+    """Make a real-sounding Hindi voice-over (Sarvam AI, Bulbul V4 Flash). Returns a WAV download link (1 hour).
+    speaker: "male", "female", or a voice name like mukul_hi_suspense, ritu_hi_reels. pace: 0.5-2.0
+    Download it with: curl -o voice.wav "<download_url>" """
+    try:
+        wav = sarvam_voice.speak(text, speaker, pace)
+        token = _new_token(VOICES, wav=wav)
+        return {"ok": True, "download_url": f"{PUBLIC_URL}/v/{token}.wav", "seconds": sarvam_voice.seconds(wav)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@mcp.tool()
+def upload_link(title: str, description: str = "", tags: list[str] | None = None, privacy: str = "private") -> dict:
+    """Get a one-time link to upload a finished MP4 to YouTube (Pixel Katha 3D). Works for 1 hour.
+    Then send the file:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
+    The server uploads it to YouTube, deletes it, and answers with the YouTube link.
+    title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private"""
+    token = _new_token(UPLOADS, meta={"title": title, "description": description, "tags": tags or [], "privacy": privacy})
+    url = f"{PUBLIC_URL}/u/{token}"
+    return {"ok": True, "upload_url": url,
+            "how": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
+
+
+@mcp.tool()
 def channel_info() -> dict:
     """Channel name, subscribers and video count."""
     try:
@@ -134,27 +185,51 @@ def run_http() -> None:
             return JSONResponse({"ok": False, "error": str(e)}, 400)
         return Response(wav, media_type="audio/wav")
 
-    async def upload(request):
-        """Body = MP4 bytes, details in the query string. The file is deleted right after."""
-        q = request.query_params
+    async def receive_and_upload(request, meta: dict):
+        """Save the MP4 body to a temp file (as it arrives: low memory), upload it, delete it."""
         fd, tmp = tempfile.mkstemp(suffix=".mp4")
         try:
             with open(fd, "wb") as f:
-                async for chunk in request.stream():      # write to disk as it arrives: low memory
+                async for chunk in request.stream():
                     f.write(chunk)
-            tags = [t.strip() for t in q.get("tags", "").split(",") if t.strip()]
-            result = await asyncio.to_thread(upload_file, tmp, q.get("title", ""), q.get("description", ""),
-                                             tags, q.get("privacy", "private"), q.get("account", "main"))
+            result = await asyncio.to_thread(upload_file, tmp, meta.get("title", ""), meta.get("description", ""),
+                                             meta.get("tags", []), meta.get("privacy", "private"),
+                                             meta.get("account", "main"))
         finally:
             Path(tmp).unlink(missing_ok=True)
         return JSONResponse(result, 200 if result["ok"] else 500)
 
+    async def upload(request):
+        """Body = MP4 bytes, details in the query string."""
+        q = request.query_params
+        tags = [t.strip() for t in q.get("tags", "").split(",") if t.strip()]
+        return await receive_and_upload(request, {"title": q.get("title", ""), "description": q.get("description", ""),
+                                                  "tags": tags, "privacy": q.get("privacy", "private"),
+                                                  "account": q.get("account", "main")})
+
+    async def upload_by_link(request):
+        """One-time link from the upload_link tool: no key needed."""
+        item = _take(UPLOADS, request.path_params["token"], once=True)
+        if not item:
+            return JSONResponse({"ok": False, "error": "link expired or already used: call upload_link again"}, 404)
+        return await receive_and_upload(request, item["meta"])
+
+    async def voice_file(request):
+        """Voice made by the make_voice tool (link works for 1 hour)."""
+        item = _take(VOICES, request.path_params["token"])
+        if not item:
+            return JSONResponse({"ok": False, "error": "voice link expired: call make_voice again"}, 404)
+        return Response(item["wav"], media_type="audio/wav")
+
     app = mcp.streamable_http_app(stateless_http=True, host="0.0.0.0")
-    app.router.routes += [Route("/voice", voice, methods=["POST"]), Route("/upload", upload, methods=["POST"])]
+    app.router.routes += [Route("/voice", voice, methods=["POST"]), Route("/upload", upload, methods=["POST"]),
+                          Route("/u/{token}", upload_by_link, methods=["POST"]),
+                          Route("/v/{token}.wav", voice_file, methods=["GET"])]
 
     async def check_key(scope, receive, send):
-        """Allow only requests with  ?key=API_KEY  or  Authorization: Bearer API_KEY."""
-        if scope["type"] == "http":
+        """Allow only requests with  ?key=API_KEY  or  Authorization: Bearer API_KEY.
+        The random one-time links (/u/..., /v/...) are their own key."""
+        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/")):
             headers = dict(scope["headers"])
             query = scope.get("query_string", b"").decode()
             if headers.get(b"authorization", b"").decode() != f"Bearer {api_key}" \
