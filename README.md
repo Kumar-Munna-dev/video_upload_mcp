@@ -158,8 +158,10 @@ Wahi step 4 wala command dobara chalao.
 
 # Sarvam AI voice (`make_voice` tool)
 
-Real-sounding Hindi voice-over. Tool: `make_voice(text, speaker="shubh", pace=1.0, name="voice")` → `~/.youtube-mcp/voices/<name>.wav`
+Real-sounding Hindi voice-over with Sarvam **Bulbul V4 Flash**. Tool: `make_voice(text, speaker="male", pace=1.0, name="voice")` → `~/.youtube-mcp/voices/<name>.wav`
 
-- **Male:** shubh, aditya, rahul, rohan, amit, varun · **Female:** priya, neha, pooja, simran, kavya, ritu
+- `speaker`: **male** = `shubh_hi_stories_dramatic` · **female** = `simran_hi_narration`
+- Other good voices: `shubh_hi_stories_mixed`, `mukul_hi_suspense`, `anand_hi_documentary`, `ritu_hi_reels`, `ishita_hi_ads` (any Bulbul V4 Flash voice name works)
+- In a video's `script.json`: `"voice": "sarvam:male"` (or `sarvam:female`, `sarvam:<voice name>`)
 - **API key:** on your PC, put it in `C:\Users\<you>\.youtube-mcp\sarvam_key.txt`. On Render, add the environment variable `SARVAM_API_KEY`.
-- Quick test: `python sarvam_voice.py "नमस्ते दोस्तों!" shubh` creates `hello.wav`
+- Quick test: `python sarvam_voice.py "नमस्ते दोस्तों!" male` creates `hello.wav`
