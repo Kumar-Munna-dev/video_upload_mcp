@@ -1,0 +1,15 @@
+# Render blueprint: free web service that sleeps when idle and wakes on a request
+services:
+  - type: web
+    name: youtube-mcp
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python youtube_mcp.py http
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: API_KEY            # your secret password (fill in on Render)
+        sync: false
+      - key: YOUTUBE_TOKEN_MAIN # contents of ~/.youtube-mcp/tokens/main.json
+        sync: false

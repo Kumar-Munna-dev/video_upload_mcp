@@ -111,7 +111,7 @@ gcloud projects add-iam-policy-binding YOUR_PROJECT_ID --member=serviceAccount:P
 ## 4. Deploy (isi folder me chalao)
 
 ```bash
-gcloud run deploy youtube-mcp --source . --region asia-south1 --allow-unauthenticated --memory 1Gi --timeout 3600 --set-secrets YOUTUBE_TOKEN_MAIN=youtube-token-main:latest,API_KEY=mcp-api-key:latest
+gcloud run deploy youtube-mcp --source . --region asia-south1 --allow-unauthenticated --memory 1Gi --timeout 3600 --min-instances 0 --max-instances 1 --set-secrets YOUTUBE_TOKEN_MAIN=youtube-token-main:latest,API_KEY=mcp-api-key:latest
 ```
 
 Last me URL milega, jaise `https://youtube-mcp-xxxx.a.run.app`.
