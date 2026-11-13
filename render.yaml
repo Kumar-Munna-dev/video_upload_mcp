@@ -13,5 +13,11 @@ services:
         sync: false
       - key: YOUTUBE_TOKEN_MAIN # whole text of ~/.youtube-mcp/tokens/main.json
         sync: false
+      - key: YOUTUBE_TOKEN_PIXELKATHA3D   # ~/.youtube-mcp/tokens/pixelkatha3d.json  (more channels: YOUTUBE_TOKEN_<NAME>)
+        sync: false
+      - key: YOUTUBE_TOKEN_RIDDLESPIXO    # ~/.youtube-mcp/tokens/riddlespixo.json
+        sync: false
+      - key: YOUTUBE_TOKEN_SCIELIFEINDIA  # ~/.youtube-mcp/tokens/scielifeindia.json
+        sync: false
       - key: SARVAM_API_KEY     # Sarvam AI key, for /voice
         sync: false

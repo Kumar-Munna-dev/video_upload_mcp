@@ -2,17 +2,20 @@
 YouTube + voice server. Runs on Render; your PC makes the videos and calls it.
 
   python youtube_mcp.py auth main   one-time login on your PC -> ~/.youtube-mcp/tokens/main.json
+                                   (one per channel: auth pixelkatha3d / auth riddlespixo / auth scielifeindia)
   python youtube_mcp.py http        the web server (Render runs this)
 
 Web endpoints (each needs the API key: header "Authorization: Bearer <API_KEY>" or ?key=<API_KEY>):
   POST /voice    JSON {"text", "speaker": "male", "pace": 1.0}            -> WAV audio (Sarvam AI)
-  POST /upload?title=..&description=..&tags=a,b&privacy=private   body = MP4 bytes -> JSON {ok, url}
+  POST /upload?title=..&description=..&tags=a,b&privacy=private&account=main   body = MP4 bytes -> JSON {ok, url}
+  GET  /channels  every channel the server has a token for -> JSON {account: {title, subscribers, videos}}
   /mcp           MCP tools for Claude (add as a connector, so ANY chat can use it):
                  make_voice -> voice download link · upload_link -> one-time link to POST the MP4 to
                  upload_video (from a public link) · channel_info
 Links made by make_voice / upload_link need no key, are random, work for 1 hour and only once (upload).
 
-Render environment variables: API_KEY, YOUTUBE_TOKEN_MAIN (whole main.json), SARVAM_API_KEY
+Render environment variables: API_KEY, SARVAM_API_KEY, and one YOUTUBE_TOKEN_<ACCOUNT> per channel
+(YOUTUBE_TOKEN_MAIN = whole main.json, YOUTUBE_TOKEN_PIXELKATHA3D = whole pixelkatha3d.json, ...)
 Nothing is kept on the server: every video is deleted right after its upload.
 """
 import asyncio
@@ -85,10 +88,28 @@ def youtube(account: str = "main"):
     try:
         creds = Credentials.from_authorized_user_info(json.loads(token), SCOPES)
     except ValueError:
-        raise RuntimeError("The YouTube token must be the WHOLE main.json text, from { to }.") from None
+        raise RuntimeError(f"The YouTube token must be the WHOLE {account}.json text, from {{ to }}.") from None
     if not creds.valid:
         creds.refresh(Request())
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
+
+
+def accounts() -> list[str]:
+    """Every account with a token: env YOUTUBE_TOKEN_<NAME> or ~/.youtube-mcp/tokens/<name>.json."""
+    names = {k[len("YOUTUBE_TOKEN_"):].lower() for k in os.environ if k.startswith("YOUTUBE_TOKEN_")}
+    if (BASE / "tokens").exists():
+        names |= {f.stem.lower() for f in (BASE / "tokens").glob("*.json")}
+    return sorted(names)
+
+
+def channel(account: str = "main") -> dict:
+    """Name, subscribers and video count of one account's channel."""
+    try:
+        c = youtube(account).channels().list(part="snippet,statistics", mine=True).execute()["items"][0]
+        return {"ok": True, "account": account, "title": c["snippet"]["title"],
+                "subscribers": c["statistics"].get("subscriberCount"), "videos": c["statistics"].get("videoCount")}
+    except Exception as e:
+        return {"ok": False, "account": account, "error": str(e)}
 
 
 def upload_file(path: str, title: str, description: str = "", tags: list[str] | None = None,
@@ -113,15 +134,16 @@ def upload_file(path: str, title: str, description: str = "", tags: list[str] | 
 
 @mcp.tool()
 def upload_video(video_url: str, title: str, description: str = "", tags: list[str] | None = None,
-                 privacy: str = "private") -> dict:
+                 privacy: str = "private", account: str = "main") -> dict:
     """Upload a video to YouTube from a public download link (https://...mp4).
-    title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private"""
+    title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private
+    account: which channel (see channel_info), default "main" """
     fd, tmp = tempfile.mkstemp(suffix=".mp4")
     try:
         with open(fd, "wb") as f, urllib.request.urlopen(video_url) as r:
             while chunk := r.read(1024 * 1024):
                 f.write(chunk)
-        return upload_file(tmp, title, description, tags, privacy)
+        return upload_file(tmp, title, description, tags, privacy, account)
     except Exception as e:
         return {"ok": False, "error": str(e)}
     finally:
@@ -143,14 +165,15 @@ def make_voice(text: str, speaker: str = "male", pace: float = 1.0) -> dict:
 
 @mcp.tool()
 def upload_link(title: str, description: str = "", tags: list[str] | None = None, privacy: str = "private",
-                category: str = "22") -> dict:
-    """Get a one-time link to upload a finished MP4 to YouTube (Pixel Katha 3D). Works for 1 hour.
+                category: str = "22", account: str = "main") -> dict:
+    """Get a one-time link to upload a finished MP4 to YouTube. Works for 1 hour.
+    account: which channel ("main" = Pixel Katha 3D; channel_info lists them all). One link = one channel.
     Then send the file:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
     The server uploads it to YouTube, deletes it, and answers with the YouTube link.
     title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private
     category: 22 People & Blogs (default), 27 Education, 24 Entertainment, 23 Comedy"""
     token = _new_token(UPLOADS, meta={"title": title, "description": description, "tags": tags or [], "privacy": privacy,
-                                      "category": category})
+                                      "category": category, "account": account})
     url = f"{PUBLIC_URL}/u/{token}"
     return {"ok": True, "upload_url": url,
             "how": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
@@ -158,13 +181,8 @@ def upload_link(title: str, description: str = "", tags: list[str] | None = None
 
 @mcp.tool()
 def channel_info() -> dict:
-    """Channel name, subscribers and video count."""
-    try:
-        c = youtube().channels().list(part="snippet,statistics", mine=True).execute()["items"][0]
-        return {"ok": True, "title": c["snippet"]["title"], "subscribers": c["statistics"].get("subscriberCount"),
-                "videos": c["statistics"].get("videoCount")}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    """Every connected channel: account name -> channel name, subscribers, video count."""
+    return {"ok": True, "channels": [channel(a) for a in accounts()]}
 
 
 # ---------------------------------------------------------------- web server
@@ -217,6 +235,10 @@ def run_http() -> None:
             return JSONResponse({"ok": False, "error": "link expired or already used: call upload_link again"}, 404)
         return await receive_and_upload(request, item["meta"])
 
+    async def channels(request):
+        """Every account with a token, and its channel."""
+        return JSONResponse({a: await asyncio.to_thread(channel, a) for a in accounts()})
+
     async def voice_file(request):
         """Voice made by the make_voice tool (link works for 1 hour)."""
         item = _take(VOICES, request.path_params["token"])
@@ -227,6 +249,7 @@ def run_http() -> None:
     app = mcp.streamable_http_app(stateless_http=True, host="0.0.0.0")
     app.router.routes += [Route("/voice", voice, methods=["POST"]), Route("/upload", upload, methods=["POST"]),
                           Route("/u/{token}", upload_by_link, methods=["POST"]),
+                          Route("/channels", channels, methods=["GET"]),
                           Route("/v/{token}.wav", voice_file, methods=["GET"])]
 
     async def check_key(scope, receive, send):
