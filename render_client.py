@@ -9,7 +9,8 @@ Your PC talks to the Render server: make a voice, upload a video. Standard libra
   python render_client.py social                             every Instagram account / Facebook Page on the server
   python render_client.py social instagram riddlespixo video.mp4 info.json
                                                              info.json = {"title", "description", "hashtags": [..],
-                                                                          "video_type": "auto"}  (auto|short|long)
+                                                                          "video_type": "auto",  (auto|short|long)
+                                                                          "cover": "cover.jpg"}  (optional thumbnail, JPG 9:16)
 
 Server: env YT_SERVER (default below). API key: env API_KEY, or the file apikey.txt next to this script,
 or ~/.youtube-mcp/api_key.txt. No YouTube token or Sarvam key is needed on the PC.
@@ -84,11 +85,18 @@ def social_list() -> dict:
         raise RuntimeError(f"Server error {e.code}: {e.read().decode(errors='replace')[:300]}") from None
 
 
+def send_cover(image: str) -> str:
+    """Send a JPG cover (thumbnail) to the server first; returns its cover_id (kept 1 hour)."""
+    data = Path(image).read_bytes()
+    return json.loads(_post("/cover", data, "image/jpeg", len(data)))["cover_id"]
+
+
 def social_upload(platform: str, name: str, video: str, info: dict) -> dict:
-    """Send an MP4 to the server, which posts it on one Instagram account / Facebook Page. Returns {ok, url}."""
+    """Send an MP4 (and its cover) to the server, which posts it on one Instagram account / Facebook Page."""
+    cover_id = send_cover(info["cover"]) if info.get("cover") else ""
     query = urllib.parse.urlencode({"title": info.get("title", ""), "description": info.get("description", ""),
                                     "hashtags": ",".join(info.get("hashtags", [])),
-                                    "video_type": info.get("video_type", "auto")})
+                                    "video_type": info.get("video_type", "auto"), "cover": cover_id})
     with open(video, "rb") as f:
         return json.loads(_post(f"/social/{platform}/{name}?{query}", f, "video/mp4", os.path.getsize(video)))
 

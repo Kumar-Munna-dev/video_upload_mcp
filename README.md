@@ -17,6 +17,7 @@ Claude can also use it as an MCP **connector** at `/mcp`, so **any chat** (Code 
   - Instagram: every video is a Reel (short or long; long ones also show on the profile grid).
   - Facebook Page: short (≤ 90 s) → Reels section, long → normal video post. `video_type`: auto | short | long.
   - Caption = title + description + #hashtags (all three are required).
+  - Cover (thumbnail): send a JPG (9:16) to `<upload_url>/cover` BEFORE the video. Works for YouTube too.
 
 ### Add an Instagram account / Facebook Page (any time)
 On Render → Environment, add ONE variable, then the server restarts and the new tool appears:
@@ -49,7 +50,7 @@ python render_client.py upload video.mp4 info.json
 ```bash
 python render_client.py social instagram riddlespixo video.mp4 insta.json
 ```
-`insta.json`: `{"title": "...", "description": "...", "hashtags": ["paheli", "riddle"], "video_type": "auto"}`
+`insta.json`: `{"title": "...", "description": "...", "hashtags": ["paheli", "riddle"], "video_type": "auto", "cover": "cover.jpg"}`
 The API key goes in `apikey.txt` next to `render_client.py`.
 
 ## Render setup (once)

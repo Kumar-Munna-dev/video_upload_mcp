@@ -10,6 +10,9 @@ Short or long video:
   short = up to 90 seconds, long = more than 90 seconds ("auto" measures the MP4).
   Instagram: every video is a Reel (the API has no other video type); it is also shown on the profile grid.
   Facebook:  short -> the Page's Reels section,  long -> the Page's Videos (normal post).
+
+Cover (thumbnail): optional JPG image (9:16, e.g. 1080x1920, under 8 MB).
+  Instagram downloads it from a public link (cover_url, the server makes one); Facebook gets the bytes.
 """
 import json
 import os
@@ -88,6 +91,12 @@ def video_seconds(path: str) -> float:
     return 0
 
 
+def check_cover(cover: bytes | None) -> None:
+    """A cover must be a JPG (Instagram accepts only JPG) under 8 MB."""
+    if cover is not None and (not cover.startswith(bytes([0xFF, 0xD8])) or len(cover) > 8_000_000):
+        raise RuntimeError("cover must be a JPG image under 8 MB (9:16, e.g. 1080x1920)")
+
+
 def is_short(path: str, video_type: str = "auto") -> bool:
     """video_type "short" / "long" decides; "auto" = up to 90 seconds is short."""
     if video_type in ("short", "long"):
@@ -124,7 +133,7 @@ def _send_file(url: str, token: str, path: str) -> dict:
 # ---------------------------------------------------------------- Instagram
 
 def instagram_upload(name: str, path: str, title: str, description: str, hashtags: list[str],
-                     video_type: str = "auto") -> dict:
+                     video_type: str = "auto", cover: bytes | None = None, cover_url: str = "") -> dict:
     """Post an MP4 as a Reel on one Instagram account. Returns {ok, url, posted_as}."""
     try:
         acc = account("instagram", name)
@@ -133,11 +142,14 @@ def instagram_upload(name: str, path: str, title: str, description: str, hashtag
         host = acc.get("host") or ("graph.facebook.com" if token.startswith("EAA") else "graph.instagram.com")
         api = f"https://{host}/{API_VERSION}"
         short = is_short(path, video_type)
+        check_cover(cover)
 
-        # 1. make an empty Reel ("container")
-        box = _answer(httpx.post(f"{api}/{user}/media", timeout=60, data={
-            "media_type": "REELS", "upload_type": "resumable", "share_to_feed": "true",
-            "caption": make_caption(title, description, hashtags), "access_token": token}))
+        # 1. make an empty Reel ("container"); Instagram fetches the cover from cover_url itself
+        details = {"media_type": "REELS", "upload_type": "resumable", "share_to_feed": "true",
+                   "caption": make_caption(title, description, hashtags), "access_token": token}
+        if cover_url:
+            details["cover_url"] = cover_url
+        box = _answer(httpx.post(f"{api}/{user}/media", timeout=60, data=details))
         # 2. send the video into it
         _send_file(box["uri"], token, path)
         # 3. wait until Instagram has processed it (max ~15 minutes)
@@ -157,7 +169,8 @@ def instagram_upload(name: str, path: str, title: str, description: str, hashtag
         link = _answer(httpx.get(f"{api}/{post['id']}", timeout=60, params={
             "fields": "permalink", "access_token": token})).get("permalink", "")
         return {"ok": True, "platform": "instagram", "account": name, "url": link, "media_id": post["id"],
-                "posted_as": "reel (short)" if short else "reel (long, also on profile grid)"}
+                "posted_as": "reel (short)" if short else "reel (long, also on profile grid)",
+                "cover": "set" if cover_url else "first frame (no cover sent)"}
     except Exception as e:
         return {"ok": False, "platform": "instagram", "account": name, "error": str(e)}
 
@@ -165,13 +178,15 @@ def instagram_upload(name: str, path: str, title: str, description: str, hashtag
 # ---------------------------------------------------------------- Facebook Page
 
 def facebook_upload(name: str, path: str, title: str, description: str, hashtags: list[str],
-                    video_type: str = "auto") -> dict:
+                    video_type: str = "auto", cover: bytes | None = None, cover_url: str = "") -> dict:
     """Post an MP4 on one Facebook Page: short -> Reels, long -> Videos. Returns {ok, url, posted_as}."""
     try:
         acc = account("facebook", name)
         token, page = acc["access_token"], acc["page_id"]
         api = f"https://graph.facebook.com/{API_VERSION}"
         caption = make_caption(title, description, hashtags)
+        check_cover(cover)
+        cover_note = "set" if cover else "chosen by Facebook (no cover sent)"
 
         if is_short(path, video_type):
             # Reel: start -> send file -> finish (publish)
@@ -181,16 +196,26 @@ def facebook_upload(name: str, path: str, title: str, description: str, hashtags
             _answer(httpx.post(f"{api}/{page}/video_reels", timeout=60, data={
                 "upload_phase": "finish", "video_id": start["video_id"], "video_state": "PUBLISHED",
                 "title": title[:255], "description": caption, "access_token": token}))
+            if cover:   # the Reel's cover (thumbnail)
+                try:
+                    _answer(httpx.post(f"{api}/{start['video_id']}/thumbnails", timeout=120,
+                                       files={"source": ("cover.jpg", cover, "image/jpeg")},
+                                       data={"is_preferred": "true", "access_token": token}))
+                except Exception as e:
+                    cover_note = f"not set: {e}"
             return {"ok": True, "platform": "facebook", "account": name, "posted_as": "reel (short)",
-                    "url": f"https://www.facebook.com/reel/{start['video_id']}"}
+                    "url": f"https://www.facebook.com/reel/{start['video_id']}", "cover": cover_note}
 
         # Long video: one normal video post on the Page
         with open(path, "rb") as f:
+            files = {"source": ("video.mp4", f, "video/mp4")}
+            if cover:   # the video's cover (thumbnail) goes with it
+                files["thumb"] = ("cover.jpg", cover, "image/jpeg")
             video = _answer(httpx.post(f"https://graph-video.facebook.com/{API_VERSION}/{page}/videos", timeout=1800,
-                                       files={"source": ("video.mp4", f, "video/mp4")},
+                                       files=files,
                                        data={"title": title[:255], "description": caption, "access_token": token}))
         return {"ok": True, "platform": "facebook", "account": name, "posted_as": "video post (long)",
-                "url": f"https://www.facebook.com/{page}/videos/{video['id']}"}
+                "url": f"https://www.facebook.com/{page}/videos/{video['id']}", "cover": cover_note}
     except Exception as e:
         return {"ok": False, "platform": "facebook", "account": name, "error": str(e)}
 

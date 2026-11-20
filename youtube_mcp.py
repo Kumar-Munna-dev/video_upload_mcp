@@ -5,7 +5,8 @@ Instagram / Facebook: ONE MCP tool PER ACCOUNT, made from the Render environment
   INSTAGRAM_ACCOUNT_<NAME> = {"user_id": "...", "access_token": "..."}   -> tool  instagram_<name>
   FACEBOOK_PAGE_<NAME>     = {"page_id": "...", "access_token": "..."}   -> tool  facebook_<name>
 New account = add one variable on Render. Details in social.py.
-  POST /social/<instagram|facebook>/<name>?title=..&description=..&hashtags=a,b&video_type=auto   body = MP4
+  POST /social/<instagram|facebook>/<name>?title=..&description=..&hashtags=a,b&video_type=auto&cover=<id>   body = MP4
+  POST /cover   body = JPG -> {cover_id}   (the video's cover / thumbnail; add &cover=<cover_id> to /social or /upload)
 
   python youtube_mcp.py auth main   one-time login on your PC -> ~/.youtube-mcp/tokens/main.json
                                    (one per channel: auth pixelkatha3d / auth riddlespixo / auth scielifeindia)
@@ -49,6 +50,7 @@ PUBLIC_URL = os.environ.get("RENDER_EXTERNAL_URL", "http://127.0.0.1:8080").rstr
 LINK_LIFE = 3600                     # seconds a voice / upload link stays valid
 VOICES: dict[str, dict] = {}         # token -> {"wav", "expires"}   (in memory, max 20)
 UPLOADS: dict[str, dict] = {}        # token -> {"meta", "expires"}  (one-time upload links)
+COVERS: dict[str, dict] = {}         # token -> {"jpg", "expires"}   (cover images; Instagram downloads them from /c/)
 
 mcp = MCPServer("youtube-uploader")
 
@@ -120,7 +122,8 @@ def channel(account: str = "main") -> dict:
 
 
 def upload_file(path: str, title: str, description: str = "", tags: list[str] | None = None,
-                privacy: str = "private", account: str = "main", category: str = "22") -> dict:
+                privacy: str = "private", account: str = "main", category: str = "22",
+                cover: bytes | None = None) -> dict:
     """Upload a video file to YouTube. category: 22 People & Blogs, 27 Education, 24 Entertainment, 23 Comedy."""
     try:
         body = {"snippet": {"title": title[:100], "description": description, "tags": tags or [], "categoryId": str(category or "22")},
@@ -131,8 +134,16 @@ def upload_file(path: str, title: str, description: str = "", tags: list[str] | 
         while response is None:
             _, response = request.next_chunk()
         vid = response["id"]
+        cover_note = "none sent"
+        if cover:   # custom thumbnail (needs a phone-verified channel; Shorts may ignore it)
+            try:
+                from googleapiclient.http import MediaInMemoryUpload
+                youtube(account).thumbnails().set(videoId=vid, media_body=MediaInMemoryUpload(cover, "image/jpeg")).execute()
+                cover_note = "set"
+            except Exception as e:
+                cover_note = f"not set: {e}"
         return {"ok": True, "video_id": vid, "url": f"https://youtu.be/{vid}",
-                "privacy": response["status"]["privacyStatus"]}
+                "privacy": response["status"]["privacyStatus"], "cover": cover_note}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -175,6 +186,7 @@ def upload_link(title: str, description: str = "", tags: list[str] | None = None
                 category: str = "22", account: str = "main") -> dict:
     """Get a one-time link to upload a finished MP4 to YouTube. Works for 1 hour.
     account: which channel ("main" = Pixel Katha 3D; channel_info lists them all). One link = one channel.
+    Optional cover (thumbnail) first:  curl -X POST --data-binary @cover.jpg -H "Content-Type: image/jpeg" "<upload_url>/cover"
     Then send the file:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
     The server uploads it to YouTube, deletes it, and answers with the YouTube link.
     title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private
@@ -183,6 +195,7 @@ def upload_link(title: str, description: str = "", tags: list[str] | None = None
                                       "category": category, "account": account})
     url = f"{PUBLIC_URL}/u/{token}"
     return {"ok": True, "upload_url": url,
+            "cover_first": f'curl -X POST --data-binary @cover.jpg -H "Content-Type: image/jpeg" "{url}/cover"',
             "how": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
 
 
@@ -208,14 +221,17 @@ def social_tool(platform: str, name: str):
                                           "description": description, "hashtags": hashtags, "video_type": video_type})
         url = f"{PUBLIC_URL}/u/{token}"
         return {"ok": True, "upload_url": url,
-                "how": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
+                "cover_first": f'curl -X POST --data-binary @cover.jpg -H "Content-Type: image/jpeg" "{url}/cover"',
+                "then_video": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
 
     where = ("Instagram account @" + name + ". Every video becomes a Reel (also shown on the profile grid)."
              if platform == "instagram" else
              "Facebook Page '" + name + "'. Short video -> the Page's Reels section, long video -> a normal video post.")
     upload.__doc__ = f"""Upload a video to the {where}
     Step 1: call this tool -> you get a one-time upload_url (works 1 hour, once).
-    Step 2: send the MP4:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
+    Step 2: send the cover (thumbnail) FIRST, a JPG 9:16 like 1080x1920 (recommended, skip = first frame):
+            curl -X POST --data-binary @cover.jpg -H "Content-Type: image/jpeg" "<upload_url>/cover"
+    Step 3: send the MP4:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
             The answer is the link of the post.
     title: a catchy title (first line of the caption). description: 1-3 lines about the video.
     hashtags: 5-15 tags that fit the video, e.g. ["paheli", "riddle", "reels"] (# is added for you).
@@ -257,14 +273,17 @@ def run_http() -> None:
                 async for chunk in request.stream():
                     f.write(chunk)
             platform = meta.get("platform", "youtube")
+            cover_item = _take(COVERS, meta["cover"]) if meta.get("cover") else None
+            cover = cover_item["jpg"] if cover_item else None
+            cover_url = f"{PUBLIC_URL}/c/{meta['cover']}.jpg" if cover_item else ""
             if platform in social.UPLOADERS:      # Instagram / Facebook
                 result = await asyncio.to_thread(social.UPLOADERS[platform], meta["account"], tmp, meta.get("title", ""),
                                                  meta.get("description", ""), meta.get("hashtags", []),
-                                                 meta.get("video_type", "auto"))
+                                                 meta.get("video_type", "auto"), cover, cover_url)
             else:                                 # YouTube
                 result = await asyncio.to_thread(upload_file, tmp, meta.get("title", ""), meta.get("description", ""),
                                                  meta.get("tags", []), meta.get("privacy", "private"),
-                                                 meta.get("account", "main"), meta.get("category", "22"))
+                                                 meta.get("account", "main"), meta.get("category", "22"), cover)
         finally:
             Path(tmp).unlink(missing_ok=True)
         return JSONResponse(result, 200 if result["ok"] else 500)
@@ -275,7 +294,8 @@ def run_http() -> None:
         tags = [t.strip() for t in q.get("tags", "").split(",") if t.strip()]
         return await receive_and_upload(request, {"title": q.get("title", ""), "description": q.get("description", ""),
                                                   "tags": tags, "privacy": q.get("privacy", "private"),
-                                                  "account": q.get("account", "main"), "category": q.get("category", "22")})
+                                                  "account": q.get("account", "main"), "category": q.get("category", "22"),
+                                                  "cover": q.get("cover", "")})
 
     async def social_upload(request):
         """POST /social/<platform>/<name>?title=..&description=..&hashtags=a,b&video_type=auto  body = MP4."""
@@ -285,7 +305,39 @@ def run_http() -> None:
         hashtags = [h.strip() for h in q.get("hashtags", "").split(",") if h.strip()]
         return await receive_and_upload(request, {"platform": platform, "account": name, "title": q.get("title", ""),
                                                   "description": q.get("description", ""), "hashtags": hashtags,
-                                                  "video_type": q.get("video_type", "auto")})
+                                                  "video_type": q.get("video_type", "auto"), "cover": q.get("cover", "")})
+
+    async def save_cover(request):
+        """Read a JPG body, keep it 1 hour. Returns (token, None) or (None, error answer)."""
+        jpg = await request.body()
+        try:
+            social.check_cover(jpg)
+        except RuntimeError as e:
+            return None, JSONResponse({"ok": False, "error": str(e)}, 400)
+        return _new_token(COVERS, jpg=jpg), None
+
+    async def cover(request):
+        """POST /cover  body = JPG  -> {cover_id}; then add &cover=<cover_id> to /upload or /social/..."""
+        token, error = await save_cover(request)
+        return error or JSONResponse({"ok": True, "cover_id": token})
+
+    async def cover_by_link(request):
+        """POST /u/<token>/cover  body = JPG: the cover for that one-time upload link (send it BEFORE the video)."""
+        item = _take(UPLOADS, request.path_params["token"])
+        if not item:
+            return JSONResponse({"ok": False, "error": "link expired or already used: call the tool again"}, 404)
+        token, error = await save_cover(request)
+        if error:
+            return error
+        item["meta"]["cover"] = token
+        return JSONResponse({"ok": True, "cover": "saved, now send the video to the upload_url"})
+
+    async def cover_file(request):
+        """The cover image, public for 1 hour (Instagram downloads it from here)."""
+        item = _take(COVERS, request.path_params["token"])
+        if not item:
+            return JSONResponse({"ok": False, "error": "cover expired"}, 404)
+        return Response(item["jpg"], media_type="image/jpeg")
 
     async def social_list(request):
         """Every Instagram / Facebook account and whether its token works."""
@@ -312,6 +364,9 @@ def run_http() -> None:
     app = mcp.streamable_http_app(stateless_http=True, host="0.0.0.0")
     app.router.routes += [Route("/voice", voice, methods=["POST"]), Route("/upload", upload, methods=["POST"]),
                           Route("/u/{token}", upload_by_link, methods=["POST"]),
+                          Route("/u/{token}/cover", cover_by_link, methods=["POST"]),
+                          Route("/cover", cover, methods=["POST"]),
+                          Route("/c/{token}.jpg", cover_file, methods=["GET"]),
                           Route("/channels", channels, methods=["GET"]),
                           Route("/social", social_list, methods=["GET"]),
                           Route("/social/{platform}/{name}", social_upload, methods=["POST"]),
@@ -319,13 +374,13 @@ def run_http() -> None:
 
     async def check_key(scope, receive, send):
         """Allow only requests with  ?key=API_KEY  or  Authorization: Bearer API_KEY.
-        The random one-time links (/u/..., /v/...) are their own key. /.well-known/ is left open so that
+        The random one-time links (/u/..., /v/..., /c/...) are their own key. /.well-known/ is left open so that
         claude.ai's connector check gets a plain 404 = "no OAuth login needed" (the key is in the URL)."""
         if scope["type"] == "http" and scope["path"].startswith(f"/{api_key}/"):
             # key inside the path: https://.../<API_KEY>/mcp  (for connectors that drop ?key=)
             scope = {**scope, "path": scope["path"][len(api_key) + 1:], "raw_path": None}
             return await app(scope, receive, send)
-        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/.well-known/")):
+        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/c/", "/.well-known/")):
             headers = dict(scope["headers"])
             query = scope.get("query_string", b"").decode()
             if headers.get(b"authorization", b"").decode() != f"Bearer {api_key}" \
