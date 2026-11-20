@@ -1,0 +1,13 @@
+# never put secrets or videos into the image
+*.json
+*.env
+*.txt
+!requirements.txt
+*.mp4
+*.wav
+*.jpg
+*.zip
+shorts/
+__pycache__/
+.git/
+.venv/

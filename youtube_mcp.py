@@ -413,7 +413,19 @@ def run_http() -> None:
                 return await JSONResponse({"error": "wrong or missing API key"}, 401)(scope, receive, send)
         await app(scope, receive, send)
 
-    uvicorn.run(check_key, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    port = int(os.environ.get("PORT", 8080))
+    if os.environ.get("HTTP2") == "1":
+        # Google Cloud Run: HTTP/1 requests may be at most 32 MB, so big videos need "HTTP/2 end-to-end".
+        # Hypercorn speaks HTTP/2 without TLS (h2c), which is what Cloud Run sends then.
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config
+        config = Config()
+        config.bind = [f"0.0.0.0:{port}"]
+        config.keep_alive_timeout = 3600         # long uploads
+        config.h2_max_inbound_frame_size = 2 ** 20
+        asyncio.run(serve(check_key, config))
+    else:
+        uvicorn.run(check_key, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
