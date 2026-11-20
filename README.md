@@ -1,86 +1,252 @@
-# YouTube + Instagram + Facebook + Voice server
+# 🎬 Video Upload Server: aasaan bhasha mein
 
-Videos are made **on your PC**. This small server on **Render** does only two jobs:
+Yeh ek **robot dakiya** 📮 hai.
+Aap (ya koi AI) ise ek video dete ho, aur yeh use **YouTube, Instagram aur Facebook** par daal deta hai.
+Yeh **Hindi aawaz** (voice-over) bhi bana deta hai.
 
-| job | endpoint | what it does |
+```
+  Aapka PC / AI  ──video──▶  🤖 Server  ──▶  YouTube 📺
+                                       ──▶  Instagram 📸
+                                       ──▶  Facebook 👍
+```
+
+Server **do ghar** mein rehta hai (dono mein same code):
+
+| Ghar | Address | Kaun use kar sakta hai |
 |---|---|---|
-| voice | `POST /voice` | Hindi voice-over with Sarvam AI (Bulbul V4 Flash) → WAV |
-| upload | `POST /upload` | uploads your MP4 to YouTube, then deletes it from the server |
+| 🟣 **Render** | `https://youtube-mcp-5wk1.onrender.com` | jiske paas **API key** ho (koi bhi AI) |
+| 🔵 **Google Cloud Run** | `https://autimate-mcp-559325411060.asia-south1.run.app` | sirf aapka **Google login** + API key (private) |
 
-Claude can also use it as an MCP **connector** at `/mcp`, so **any chat** (Code tab, Cowork, claude.ai) can use it:
-- `make_voice(text, speaker)` → a WAV download link (1 hour)
-- `upload_link(title, description, tags, privacy)` → a one-time link; the chat sends the MP4 with
-  `curl -X POST --data-binary @video.mp4 "<link>"`. The server uploads it to YouTube and deletes it.
-- `upload_video(video_url, ...)`, `channel_info()`
-- **Instagram / Facebook: one tool per account**, e.g. `instagram_riddlespixo(title, description, hashtags, video_type)`
-  → a one-time link; send the MP4 with the same `curl` command. `social_accounts()` lists them all.
-  - Instagram: every video is a Reel (short or long; long ones also show on the profile grid).
-  - Facebook Page: short (≤ 90 s) → Reels section, long → normal video post. `video_type`: auto | short | long.
-  - Caption = title + description + #hashtags (all three are required).
-  - Cover (thumbnail): send a JPG (9:16) to `<upload_url>/cover` BEFORE the video. Works for YouTube too.
+> 🔑 **API key = server ka darwaze ki chaabi.** Yeh [`apikey.txt`](apikey.txt) mein hai (sirf aapke PC par).
+> Ise kabhi GitHub, chat ya screenshot mein mat daalna. Jiske paas chaabi, woh aapke channels par post kar sakta hai.
 
-### Add an Instagram account / Facebook Page (any time)
-On Render → Environment, add ONE variable, then the server restarts and the new tool appears:
-- `INSTAGRAM_ACCOUNT_<NAME>` = `{"user_id": "1784...", "access_token": "EAA..."}` → tool `instagram_<name>`
-- `FACEBOOK_PAGE_<NAME>` = `{"page_id": "...", "access_token": "<Page token>"}` → tool `facebook_<name>`
+---
 
-The Instagram user ID and token come from the Meta app: Use cases → Instagram API → API setup with Unified login →
-Generate access tokens (see `INSTAGRAM_SETUP.md`).
+## 📚 Kahani 1: AI ko server se kaise jodein (connect)
 
-To add it on claude.ai, go to Settings → Connectors → Add custom connector and use the URL
-`https://youtube-mcp-5wk1.onrender.com/mcp?key=<API_KEY>`.
-All secrets live on Render. The PC only needs the API key.
+AI ko bas **ek address** chahiye. Address mein chaabi chhupi hoti hai.
 
-## Files
-- `youtube_mcp.py`: the server (YouTube upload, MCP, web endpoints)
-- `sarvam_voice.py`: Sarvam AI text-to-speech (used by the server)
-- `social.py`: Instagram + Facebook uploads (used by the server)
-- `instagram_upload.py`: upload straight from the PC to Instagram, without the server (uses `instagram.json`)
-- `render_client.py`: used on the PC to call the server
-- `render.yaml`: Render settings
+### Step 1: chaabi lo
+[`apikey.txt`](apikey.txt) kholo. Usme ek hi line hai. Wahi **API_KEY** hai.
 
-## Use it from the PC
-```bash
-python render_client.py voice "नमस्ते दोस्तों!" hello.wav male
+### Step 2: address banao
 ```
-```bash
-python render_client.py upload video.mp4 info.json
+https://youtube-mcp-5wk1.onrender.com/<API_KEY>/mcp
 ```
-`info.json`: `{"title": "... #shorts", "description": "...", "tags": ["shorts"], "privacy": "private"}`
+`<API_KEY>` hata kar apni chaabi chipka do. Bas! 🎉
+
+### Step 3: AI mein daalo
+- **claude.ai** → Settings → Connectors → **Add custom connector** → upar wala address paste karo.
+- **Cursor / VS Code / koi bhi `mcp.json` wala AI:**
+  ```json
+  {
+    "mcpServers": {
+      "video-uploader": {
+        "url": "https://youtube-mcp-5wk1.onrender.com/mcp",
+        "headers": { "Authorization": "Bearer <API_KEY>" }
+      }
+    }
+  }
+  ```
+
+### Step 4: check karo
+AI se bolo: **"social_accounts chalao"**. Saare accounts ✅ dikhne chahiye.
+
+> 😴 Render ka free server so jaata hai. Pehli baar ~1 minute lagta hai. "Timeout" aaye to dobara try karo.
+> 🔵 Google Cloud Run **private** hai, isliye claude.ai jaise AI usse nahi jud sakte. Unke liye Render use karo.
+
+### AI ko kaunse khilone (tools) milte hain?
+
+| Tool | Kya karta hai |
+|---|---|
+| `instagram_riddlespixo`, `instagram_pixelkatha3d`, `instagram_scielifeindia` | us Instagram par Reel |
+| `facebook_riddlespixo`, `facebook_pixelkatha3d`, `facebook_scielifeindia` | us Facebook Page par video |
+| `upload_link` | YouTube par video (`account` mein channel ka naam) |
+| `make_voice` | Hindi aawaz (WAV) |
+| `social_accounts`, `channel_info` | kaun-kaun se accounts jude hain |
+
+### Video bhejne ke 3 kadam (AI khud karta hai)
+1. Tool chalao, jaise `instagram_riddlespixo(title, description, hashtags)`. Ek **ek-baar wala link** milta hai.
+2. 🖼️ (Chaho to) thumbnail pehle bhejo:
+   `curl -X POST --data-binary @cover.jpg -H "Content-Type: image/jpeg" "<link>/cover"`
+3. 🎬 Video bhejo:
+   `curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<link>"`
+   Jawab mein post ka link aata hai. ✅
+
+Yaad rakho:
+- **Title, description, hashtags**: teeno zaroori (Instagram/Facebook).
+- **Short** = 90 second tak → Facebook **Reels**. **Long** = usse lamba → Facebook **video post**.
+  Instagram par sab **Reel** banta hai.
+- Instagram/Facebook post **turant public** hoti hai. YouTube default **private**.
+
+---
+
+## 💻 Kahani 2: PC se seedha chalana
+
+```bash
+python render_client.py social
+```
+(sab accounts check)
+
 ```bash
 python render_client.py social instagram riddlespixo video.mp4 insta.json
 ```
-`insta.json`: `{"title": "...", "description": "...", "hashtags": ["paheli", "riddle"], "video_type": "auto", "cover": "cover.jpg"}`
-The API key goes in `apikey.txt` next to `render_client.py`.
+`insta.json`:
+```json
+{"title": "Aaj ki paheli!", "description": "Jawab comment karo", "hashtags": ["paheli", "riddle"], "cover": "cover.jpg"}
+```
 
-## Render setup (once)
-1. New → Blueprint → this repo (reads `render.yaml`).
-2. Set the environment variables:
-   - `API_KEY`: any long password
-   - `YOUTUBE_TOKEN_<CHANNEL>` (e.g. `YOUTUBE_TOKEN_RIDDLESPIXO`): the whole `<channel>.json` text, one per channel
-   - `SARVAM_API_KEY`: your Sarvam key
-3. Get each YouTube token on your PC once: `python youtube_mcp.py auth riddlespixo` (same for every channel).
-   The token may only upload videos/thumbnails and read channel info (no delete / edit). This needs `~/.youtube-mcp/client_secret.json`, the Google OAuth "Desktop app" JSON.
+```bash
+python render_client.py upload video.mp4 info.json
+```
+`info.json` (YouTube): `{"title": "...", "description": "...", "tags": ["shorts"], "privacy": "private", "account": "riddlespixo"}`
 
-The free plan sleeps after 15 minutes idle; the first request then takes ~50 s.
-`GET /health` (no key) shows if the server is awake and which accounts are set (no tokens).
+Google Cloud Run use karna ho to pehle (Windows):
+```bash
+set YT_SERVER=https://autimate-mcp-559325411060.asia-south1.run.app
+```
+`render_client.py` aapka `gcloud` login khud use kar leta hai.
 
-### Keeping it working in the future
-- **Meta API version**: Meta retires old versions after ~2 years. The server uses `v27.0`; to move to a newer one,
-  set `META_API_VERSION` (e.g. `v28.0`) on Render. No code change.
-- **Token stopped working?** `social_accounts` (MCP) or `python render_client.py social` shows which one. Make a new
-  token (see `INSTAGRAM_SETUP.md`) and replace that one variable on Render.
-- **Moving off Render?** Set `PUBLIC_URL` to the server's public address (Instagram downloads covers from it).
-If the Google consent screen is in "Testing" mode, the token expires every 7 days. Publish it ("In production") to stop that.
+---
 
-## Google Cloud Run (private)
-The same code also runs on Google Cloud Run: service `autimate-mcp` (project `project-5da1a3a3-b570-4755-8f1`,
-region `asia-south1`). Every push to `main` builds the `Dockerfile` and deploys it automatically (Cloud Build trigger).
-- URL: `https://autimate-mcp-559325411060.asia-south1.run.app`. It is **private**: only Google accounts with access
-  can call it (others get 403), plus the API key.
-- From the PC: `set YT_SERVER=https://autimate-mcp-559325411060.asia-south1.run.app` then use `render_client.py` as usual;
-  it uses your `gcloud auth login` automatically.
-- Settings: HTTP/2 end-to-end (videos over 32 MB), timeout 3600 s, max 1 instance, 1 GiB, env vars like on Render,
-  plus `HTTP2=1`, `PUBLIC_URL`, `COVER_LINKS=off` (Instagram can't download covers from a private server, so
-  Instagram posts get the first frame; Facebook and YouTube covers still work).
-- Change a token: `gcloud run services update autimate-mcp --region asia-south1 --update-env-vars NAME=value`.
+## ➕ Kahani 3: naya account jodna
+
+Har account = **ek dabba (environment variable)**. Naya dabba rakho → naya tool apne aap ban jaata hai. Code badalna **nahi** padta. 🎁
+
+Dabba kahan rakhna hai:
+- 🟣 **Render:** dashboard → youtube-mcp → **Environment** → Add → Save (server khud restart hota hai)
+- 🔵 **Cloud Run:**
+  ```bash
+  gcloud run services update autimate-mcp --region asia-south1 --update-env-vars "NAAM=value"
+  ```
+  (JSON value ho to Cloud Console → Cloud Run → autimate-mcp → **Edit & deploy new revision** → Variables mein daalna aasaan hai)
+
+### 📸 Naya Instagram account
+1. Instagram app → account ko **Professional** (Creator/Business) banao.
+2. [developers.facebook.com](https://developers.facebook.com) → app **automate-mcp** → Use cases → **Instagram API** →
+   **API setup with Unified login** → **2. Generate access tokens** → **Add account** → naye account se login.
+3. Account ke saamne **Generate token** → token copy. Wahin **user ID** (1784… wala number) bhi hai.
+4. Naya dabba:
+   ```
+   INSTAGRAM_ACCOUNT_NAYANAAM = {"user_id": "1784...", "access_token": "EAA..."}
+   ```
+5. Restart ke baad tool **`instagram_nayanaam`** aa jaata hai. ✅
+
+### 👍 Naya Facebook Page
+1. [Graph API Explorer](https://developers.facebook.com/tools/explorer/) → app **automate-mcp** →
+   permissions: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `business_management` →
+   **Generate Access Token** → naya Page tick karo.
+2. ⓘ → **Open in Access Token Tool** → **Extend Access Token** (lamba token).
+3. Graph API Explorer mein (lamba token ke saath) chalao: `me/accounts?fields=id,name,access_token`.
+   Naye Page ka **id** aur **access_token** (Page token, kabhi expire nahi hota) lo.
+4. Naya dabba:
+   ```
+   FACEBOOK_PAGE_NAYANAAM = {"page_id": "123...", "access_token": "EAA..."}
+   ```
+5. Tool **`facebook_nayanaam`** aa jaata hai. ✅
+
+### 📺 Naya YouTube channel
+1. Google Cloud → project **My First Project** → Google Auth Platform → **Audience** → **Test users** mein
+   us channel ka Gmail jodo (jab tak app "Testing" mein hai).
+2. PC par:
+   ```bash
+   python youtube_mcp.py auth nayanaam
+   ```
+   Browser khulega → sahi Google account → **sahi channel** chuno → Allow.
+3. File bani: `C:\Users\<aap>\.youtube-mcp\tokens\nayanaam.json`. Uska **poora text** (`{` se `}` tak) copy.
+4. Naya dabba:
+   ```
+   YOUTUBE_TOKEN_NAYANAAM = <poora json text>
+   ```
+5. Ab `upload_link(..., account="nayanaam")` chalega. ✅
+
+> ⏰ Google app abhi **"Testing"** mode mein hai, isliye YouTube token **har 7 din** mein expire hota hai.
+> Tab step 2 se 4 dobara karo. Hamesha ke liye fix: app ko "In production" karna (iske liye ek privacy policy page chahiye).
+
+### 🔁 Token kharab ho gaya?
+`social_accounts` / `channel_info` mein ❌ dikhega. Bas wahi account ka naya token lo (upar wale steps) aur **usi dabbe** ki value badal do.
+
+---
+
+## 🛠️ Kahani 4: code badalna (modify)
+
+### Kaunsi file kya karti hai?
+
+| File | Kaam |
+|---|---|
+| [`youtube_mcp.py`](youtube_mcp.py) | 🧠 server ka dimaag: MCP tools, web addresses, YouTube upload |
+| [`social.py`](social.py) | 📸👍 Instagram + Facebook upload |
+| [`sarvam_voice.py`](sarvam_voice.py) | 🗣️ Hindi aawaz (Sarvam AI) |
+| [`render_client.py`](render_client.py) | 💻 PC se server ko bulana |
+| [`instagram_upload.py`](instagram_upload.py) | PC se seedha Instagram (bina server ke, `instagram.json` se) |
+| [`Dockerfile`](Dockerfile) | 🔵 Google Cloud Run ke liye dabba |
+| [`render.yaml`](render.yaml) | 🟣 Render ki settings |
+| [`requirements.txt`](requirements.txt) | zaroori Python packages |
+
+### Badalne ke 4 kadam
+1. **File kholo aur badlo.** Har function ke upar `"""..."""` mein likha hai woh kya karta hai.
+2. **PC par check karo:**
+   ```bash
+   python -m py_compile youtube_mcp.py social.py render_client.py
+   ```
+   Kuch na dikhe = sab theek ✅
+3. **GitHub par bhejo (push):**
+   ```bash
+   git add -A
+   ```
+   ```bash
+   git commit -m "kya badla, ek line mein"
+   ```
+   ```bash
+   git push origin main
+   ```
+4. **Bas!** 🎉 Render aur Google Cloud Run **dono khud** naya code utha lete hain (~2-5 minute).
+   Check: `https://youtube-mcp-5wk1.onrender.com/health` kholo → `"ok": true`.
+
+### Aam badlaav kahan karein?
+
+| Mujhe chahiye… | Kahan badlo |
+|---|---|
+| Short/long ki seema (abhi 90 second) | `social.py` → `SHORT_MAX_SECONDS` |
+| Max hashtags (abhi 30) | `social.py` → `HASHTAGS_MAX` |
+| Tool ka description (AI ko kya samjhaye) | `youtube_mcp.py` → `social_tool()` ke andar `upload.__doc__` |
+| Naya MCP tool | `youtube_mcp.py` mein naya function, upar `@mcp.tool()` likho |
+| Default aawaz | `sarvam_voice.py` → `MALE`, `FEMALE` |
+| Meta API version (jab Meta purana band kare) | code nahi! dabba `META_API_VERSION` = `v28.0` |
+
+> ⚠️ **Kabhi commit mat karna:** `apikey.txt`, `*.json`, `*.env`, videos. `.gitignore` inhe pehle se rokta hai.
+> Pakka karne ke liye `git status` dekho: yeh files list mein nahi aani chahiye.
+
+---
+
+## 🧰 Kuch toot gaya? (help)
+
+| Dikkat | Kya karein |
+|---|---|
+| `wrong or missing API key` | address/header mein chaabi galat. `apikey.txt` se dobara copy karo |
+| `invalid_grant` / YouTube token expired | Kahani 3 → 📺 YouTube steps 2-4 |
+| Instagram/Facebook `Session has expired` | us account ka naya token, wahi dabba badlo |
+| `uploadLimitExceeded` (YouTube) | aaj ki limit khatam, 24 ghante baad |
+| Server jawab nahi deta | Render so raha hai, 1 minute ruko; ya `/health` kholo |
+| Cloud Run `403` | private hai: `gcloud auth login` karo, ya Render use karo |
+| Instagram cover nahi laga (Cloud Run) | private server se Instagram cover nahi le sakta, Render use karo |
+| `no video received` | `curl` mein `@` ke baad file ka path galat |
+
+---
+
+## 🔬 Technical details (badon ke liye)
+
+- **Environment variables:** `API_KEY`, `SARVAM_API_KEY`, `YOUTUBE_TOKEN_<NAME>`, `INSTAGRAM_ACCOUNT_<NAME>`,
+  `FACEBOOK_PAGE_<NAME>`, `META_API_VERSION` (default `v27.0`), `PUBLIC_URL` (Instagram covers download from it),
+  `HTTP2=1` (Cloud Run: hypercorn h2c, needed for videos > 32 MB), `COVER_LINKS=off` (private server).
+  A value may be wrapped in `'...'` (Render "Add from .env" keeps quotes; the server strips them).
+- **Web endpoints** (API key as `Authorization: Bearer <key>`, `X-API-Key: <key>` or `?key=<key>`):
+  `POST /voice`, `POST /upload`, `POST /social/<instagram|facebook>/<name>`, `POST /cover`, `GET /channels`,
+  `GET /social`, `/mcp`. Without key: `GET /health`, one-time links `/u/…`, `/v/…`, `/c/…` (random, 1 hour).
+- **YouTube permissions:** only `youtube.upload` + `youtube.readonly` (no delete/edit).
+- **Memory:** voices/covers kept in RAM max 1 hour, max 120 MB per store. Videos are deleted right after upload.
+- **Render:** Blueprint from `render.yaml`, free plan (sleeps after 15 min idle).
+- **Google Cloud Run:** service `autimate-mcp`, project `project-5da1a3a3-b570-4755-8f1`, region `asia-south1`,
+  Cloud Build trigger on push to `main`, HTTP/2 end-to-end, timeout 3600 s, max 1 instance (one-time links live in
+  memory), 1 GiB, requires authentication.
+- **Instagram setup from zero:** see [`INSTAGRAM_SETUP.md`](INSTAGRAM_SETUP.md).
