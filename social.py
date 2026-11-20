@@ -36,11 +36,18 @@ def account(platform: str, name: str) -> dict:
     value = os.environ.get(PREFIX[platform] + name.upper())
     if not value:
         raise RuntimeError(f"No {platform} account '{name}'. Accounts: {', '.join(accounts(platform)) or 'none'}")
-    try:
-        return json.loads(value)
-    except ValueError:
-        raise RuntimeError(f"{PREFIX[platform]}{name.upper()} must be JSON like "
-                           '{"user_id": "...", "access_token": "..."}') from None
+    text = value.strip()
+    for attempt in (text, text[1:-1]):        # also accept the value wrapped in '...' or "..."
+        try:
+            data = json.loads(attempt)
+            if isinstance(data, str):         # JSON saved as a quoted string
+                data = json.loads(data)
+            if isinstance(data, dict):
+                return data
+        except ValueError:
+            pass
+    id_key = "user_id" if platform == "instagram" else "page_id"
+    raise RuntimeError(f'{PREFIX[platform]}{name.upper()} must be JSON like {{"{id_key}": "...", "access_token": "..."}}')
 
 
 # ---------------------------------------------------------------- small helpers
