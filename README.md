@@ -219,6 +219,95 @@ Dabba kahan rakhna hai:
 
 ---
 
+## 🔑 Kahani 5: chaabi (API key / token) badalna
+
+Chaabi **kab** badlein?
+- 🕵️ shak ho ki kisi ne dekh li (screenshot, chat, GitHub mein chali gayi)
+- ⏰ token expire ho gaya (`social_accounts` / `channel_info` mein ❌)
+- 🙂 bas aise hi, har kuch mahine mein
+
+Har chaabi ek **dabba** (environment variable) mein rehti hai. Badalna = **naya value daalna, dono gharon mein**:
+- 🟣 **Render:** dashboard → youtube-mcp → **Environment** → dabbe ke saamne ✏️ edit → nayi value → **Save**
+- 🔵 **Cloud Run:**
+  ```bash
+  gcloud run services update autimate-mcp --region asia-south1 --update-env-vars "DABBA_NAAM=nayi_value"
+  ```
+  JSON wali value (Instagram/Facebook/YouTube) ke liye aasaan: Cloud Console → Cloud Run → **autimate-mcp** →
+  **Edit & deploy new revision** → **Variables & Secrets** → value badlo → **Deploy**.
+
+> Purani chaabi nayi value save hote hi **turant bekaar** ho jaati hai. ✅
+
+### 1️⃣ Apni server API key (darwaze ki chaabi)
+1. Nayi lambi chaabi banao:
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+2. Yeh **4 jagah** daalo:
+
+   | Kahan | Kaise |
+   |---|---|
+   | 🟣 Render | dabba `API_KEY` |
+   | 🔵 Cloud Run | `gcloud run services update autimate-mcp --region asia-south1 --update-env-vars "API_KEY=<nayi>"` |
+   | 💻 PC | [`apikey.txt`](apikey.txt) **aur** `C:\Users\<aap>\.youtube-mcp\api_key.txt` mein purani line hata kar nayi |
+   | 🤖 Har AI connector | address `.../<nayi>/mcp` se badlo (claude.ai → Settings → Connectors → purana hatao, naya jodo). `C:\Users\<aap>\.youtube-mcp\connector_url.txt` bhi update karo |
+
+3. Check:
+   ```bash
+   python render_client.py social
+   ```
+   Saare ✅ = ho gaya.
+
+### 2️⃣ Instagram token
+1. [developers.facebook.com](https://developers.facebook.com) → app **automate-mcp** → Use cases → **Instagram API** →
+   **API setup with Unified login** → **2. Generate access tokens**.
+2. Us account ke saamne **Generate token** → login → naya token copy.
+   (Purana token band karna ho to wahin **Remove** karke dobara **Add account** karo.)
+3. Dabba `INSTAGRAM_ACCOUNT_<NAAM>` ki value mein sirf `access_token` badlo:
+   ```
+   {"user_id": "1784... (wahi purana)", "access_token": "EAA... (naya)"}
+   ```
+4. Render + Cloud Run dono mein save → `python render_client.py social` → ✅
+
+### 3️⃣ Facebook Page token
+1. [Graph API Explorer](https://developers.facebook.com/tools/explorer/) → app **automate-mcp** → **Generate Access Token** →
+   Pages tick karo → ⓘ → **Open in Access Token Tool** → **Extend Access Token**.
+2. Explorer mein (lamba token ke saath) chalao: `me/accounts?fields=id,name,access_token` → us Page ka naya **access_token**.
+3. Dabba `FACEBOOK_PAGE_<NAAM>`:
+   ```
+   {"page_id": "123... (wahi purana)", "access_token": "EAA... (naya)"}
+   ```
+4. Purane token band karne ka pakka tarika: Facebook → Settings → **Business integrations** → **automate-mcp** → Remove,
+   phir step 1 se naya banao.
+5. Dono gharon mein save → `python render_client.py social` → ✅
+
+### 4️⃣ YouTube token
+1. PC par (har channel ke liye):
+   ```bash
+   python youtube_mcp.py auth riddlespixo
+   ```
+   Browser → sahi Google account → **sahi channel** → Allow.
+2. `C:\Users\<aap>\.youtube-mcp\tokens\riddlespixo.json` ka **poora text** copy.
+3. Dabba `YOUTUBE_TOKEN_RIDDLESPIXO` = woh text. Dono gharon mein save.
+4. Purana token band karna ho: [myaccount.google.com/permissions](https://myaccount.google.com/permissions) →
+   app ka naam → **Remove access**, phir step 1.
+5. Check:
+   ```bash
+   python render_client.py channels
+   ```
+
+### 5️⃣ Sarvam (aawaz) key
+1. [dashboard.sarvam.ai](https://dashboard.sarvam.ai) → API keys → nayi key banao, purani delete karo.
+2. Dabba `SARVAM_API_KEY` (dono gharon mein) + PC par `C:\Users\<aap>\.youtube-mcp\sarvam_key.txt`.
+3. Check:
+   ```bash
+   python render_client.py voice "नमस्ते" test.wav male
+   ```
+
+> ⚠️ Nayi chaabi **kabhi** chat, GitHub, screenshot ya kisi file mein mat daalna jo commit hoti hai.
+> PC ki local files (`apikey.txt`, `instagram.json`, `*.env`) `.gitignore` mein hain, GitHub par nahi jaati.
+
+---
+
 ## 🧰 Kuch toot gaya? (help)
 
 | Dikkat | Kya karein |
