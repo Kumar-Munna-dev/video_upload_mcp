@@ -8,13 +8,13 @@ New account = add one variable on Render. Details in social.py.
   POST /social/<instagram|facebook>/<name>?title=..&description=..&hashtags=a,b&video_type=auto&cover=<id>   body = MP4
   POST /cover   body = JPG -> {cover_id}   (the video's cover / thumbnail; add &cover=<cover_id> to /social or /upload)
 
-  python youtube_mcp.py auth main   one-time login on your PC -> ~/.youtube-mcp/tokens/main.json
-                                   (one per channel: auth pixelkatha3d / auth riddlespixo / auth scielifeindia)
+  python youtube_mcp.py auth pixelkatha3d   one-time login on your PC -> ~/.youtube-mcp/tokens/pixelkatha3d.json
+                                           (one per channel: auth riddlespixo / auth scielifeindia / auth <new>)
   python youtube_mcp.py http        the web server (Render runs this)
 
 Web endpoints (each needs the API key: header "Authorization: Bearer <API_KEY>" or ?key=<API_KEY>):
   POST /voice    JSON {"text", "speaker": "male", "pace": 1.0}            -> WAV audio (Sarvam AI)
-  POST /upload?title=..&description=..&tags=a,b&privacy=private&account=main   body = MP4 bytes -> JSON {ok, url}
+  POST /upload?title=..&description=..&tags=a,b&privacy=private&account=riddlespixo   body = MP4 bytes -> JSON {ok, url}
   GET  /channels  every channel the server has a token for -> JSON {account: {title, subscribers, videos}}
   /mcp           MCP tools for Claude (add as a connector, so ANY chat can use it):
                  make_voice -> voice download link · upload_link -> one-time link to POST the MP4 to
@@ -22,7 +22,7 @@ Web endpoints (each needs the API key: header "Authorization: Bearer <API_KEY>" 
 Links made by make_voice / upload_link need no key, are random, work for 1 hour and only once (upload).
 
 Render environment variables: API_KEY, SARVAM_API_KEY, and one YOUTUBE_TOKEN_<ACCOUNT> per channel
-(YOUTUBE_TOKEN_MAIN = whole main.json, YOUTUBE_TOKEN_PIXELKATHA3D = whole pixelkatha3d.json, ...)
+(YOUTUBE_TOKEN_PIXELKATHA3D = whole pixelkatha3d.json, YOUTUBE_TOKEN_RIDDLESPIXO = whole riddlespixo.json, ...)
 Nothing is kept on the server: every video is deleted right after its upload.
 """
 import asyncio
@@ -45,7 +45,9 @@ import sarvam_voice
 import social
 
 BASE = Path.home() / ".youtube-mcp"
-SCOPES = ["https://www.googleapis.com/auth/youtube"]
+# Only what the server needs: upload videos (+ their thumbnails) and read the channel name / numbers.
+# No permission to delete, edit or comment.
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
 # The server's own public address (Instagram downloads covers from it). Render sets RENDER_EXTERNAL_URL;
 # anywhere else set PUBLIC_URL.
 PUBLIC_URL = (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL")
@@ -92,14 +94,19 @@ def login(account: str) -> None:
     print(f"Token saved: {out}. Put its whole text in Render as YOUTUBE_TOKEN_{account.upper()}.")
 
 
-def youtube(account: str = "main"):
+def youtube(account: str):
     """YouTube API client. Token from env YOUTUBE_TOKEN_<ACCOUNT> (Render) or ~/.youtube-mcp/tokens/<account>.json."""
+    if not account:
+        raise RuntimeError(f"Which channel? Set account to one of: {', '.join(accounts()) or 'none'}")
     token = os.environ.get(f"YOUTUBE_TOKEN_{account.upper()}")
     file = BASE / "tokens" / f"{account}.json"
     if not token and file.exists():
         token = file.read_text()
     if not token:
         raise RuntimeError(f"No YouTube token for '{account}'. Run: python youtube_mcp.py auth {account}")
+    token = token.strip()
+    if token[:1] in "'\"" and token[-1:] == token[:1]:   # Render "Add from .env" may keep the '...' quotes
+        token = token[1:-1]
     try:
         creds = Credentials.from_authorized_user_info(json.loads(token), SCOPES)
     except ValueError:
@@ -117,7 +124,7 @@ def accounts() -> list[str]:
     return sorted(names)
 
 
-def channel(account: str = "main") -> dict:
+def channel(account: str) -> dict:
     """Name, subscribers and video count of one account's channel."""
     try:
         c = youtube(account).channels().list(part="snippet,statistics", mine=True).execute()["items"][0]
@@ -128,7 +135,7 @@ def channel(account: str = "main") -> dict:
 
 
 def upload_file(path: str, title: str, description: str = "", tags: list[str] | None = None,
-                privacy: str = "private", account: str = "main", category: str = "22",
+                privacy: str = "private", account: str = "", category: str = "22",
                 cover: bytes | None = None) -> dict:
     """Upload a video file to YouTube. category: 22 People & Blogs, 27 Education, 24 Entertainment, 23 Comedy."""
     try:
@@ -157,17 +164,17 @@ def upload_file(path: str, title: str, description: str = "", tags: list[str] | 
 # ---------------------------------------------------------------- MCP tools (for Claude)
 
 @mcp.tool()
-def upload_video(video_url: str, title: str, description: str = "", tags: list[str] | None = None,
-                 privacy: str = "private", account: str = "main") -> dict:
+def upload_video(video_url: str, title: str, account: str, description: str = "", tags: list[str] | None = None,
+                 privacy: str = "private") -> dict:
     """Upload a video to YouTube from a public download link (https://...mp4).
     title: max 100 characters (add #shorts for a Short). privacy: public | unlisted | private
-    account: which channel (see channel_info), default "main" """
+    account: which channel: pixelkatha3d, riddlespixo, scielifeindia (channel_info lists them all)"""
     fd, tmp = tempfile.mkstemp(suffix=".mp4")
     try:
         with open(fd, "wb") as f, urllib.request.urlopen(video_url) as r:
             while chunk := r.read(1024 * 1024):
                 f.write(chunk)
-        return upload_file(tmp, title, description, tags, privacy, account)
+        return upload_file(tmp, title, description, tags, privacy, account=account)
     except Exception as e:
         return {"ok": False, "error": str(e)}
     finally:
@@ -188,10 +195,10 @@ def make_voice(text: str, speaker: str = "male", pace: float = 1.0) -> dict:
 
 
 @mcp.tool()
-def upload_link(title: str, description: str = "", tags: list[str] | None = None, privacy: str = "private",
-                category: str = "22", account: str = "main") -> dict:
+def upload_link(title: str, account: str, description: str = "", tags: list[str] | None = None,
+                privacy: str = "private", category: str = "22") -> dict:
     """Get a one-time link to upload a finished MP4 to YouTube. Works for 1 hour.
-    account: which channel ("main" = Pixel Katha 3D; channel_info lists them all). One link = one channel.
+    account: which channel: pixelkatha3d, riddlespixo, scielifeindia (channel_info lists them all). One link = one channel.
     Optional cover (thumbnail) first:  curl -X POST --data-binary @cover.jpg -H "Content-Type: image/jpeg" "<upload_url>/cover"
     Then send the file:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
     The server uploads it to YouTube, deletes it, and answers with the YouTube link.
@@ -291,7 +298,7 @@ def run_http() -> None:
             else:                                 # YouTube
                 result = await asyncio.to_thread(upload_file, tmp, meta.get("title", ""), meta.get("description", ""),
                                                  meta.get("tags", []), meta.get("privacy", "private"),
-                                                 meta.get("account", "main"), meta.get("category", "22"), cover)
+                                                 meta.get("account", ""), meta.get("category", "22"), cover)
         finally:
             Path(tmp).unlink(missing_ok=True)
         return JSONResponse(result, 200 if result["ok"] else 500)
@@ -302,7 +309,7 @@ def run_http() -> None:
         tags = [t.strip() for t in q.get("tags", "").split(",") if t.strip()]
         return await receive_and_upload(request, {"title": q.get("title", ""), "description": q.get("description", ""),
                                                   "tags": tags, "privacy": q.get("privacy", "private"),
-                                                  "account": q.get("account", "main"), "category": q.get("category", "22"),
+                                                  "account": q.get("account", ""), "category": q.get("category", "22"),
                                                   "cover": q.get("cover", "")})
 
     async def social_upload(request):
@@ -412,7 +419,9 @@ def run_http() -> None:
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "auth":
-        login(sys.argv[2] if len(sys.argv) > 2 else "main")
+        if len(sys.argv) < 3:
+            sys.exit("Which channel? e.g.  python youtube_mcp.py auth riddlespixo")
+        login(sys.argv[2])
     elif cmd == "http":
         run_http()
     else:

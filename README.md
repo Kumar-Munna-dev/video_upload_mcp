@@ -57,9 +57,10 @@ The API key goes in `apikey.txt` next to `render_client.py`.
 1. New → Blueprint → this repo (reads `render.yaml`).
 2. Set the environment variables:
    - `API_KEY`: any long password
-   - `YOUTUBE_TOKEN_MAIN`: the whole `main.json` text
+   - `YOUTUBE_TOKEN_<CHANNEL>` (e.g. `YOUTUBE_TOKEN_RIDDLESPIXO`): the whole `<channel>.json` text, one per channel
    - `SARVAM_API_KEY`: your Sarvam key
-3. Get the YouTube token on your PC once: `python youtube_mcp.py auth main`. This needs `~/.youtube-mcp/client_secret.json`, the Google OAuth "Desktop app" JSON.
+3. Get each YouTube token on your PC once: `python youtube_mcp.py auth riddlespixo` (same for every channel).
+   The token may only upload videos/thumbnails and read channel info (no delete / edit). This needs `~/.youtube-mcp/client_secret.json`, the Google OAuth "Desktop app" JSON.
 
 The free plan sleeps after 15 minutes idle; the first request then takes ~50 s.
 `GET /health` (no key) shows if the server is awake and which accounts are set (no tokens).

@@ -11,8 +11,6 @@ services:
         value: 3.12.7
       - key: API_KEY            # your secret password; the PC sends it
         sync: false
-      - key: YOUTUBE_TOKEN_MAIN # whole text of ~/.youtube-mcp/tokens/main.json
-        sync: false
       - key: YOUTUBE_TOKEN_PIXELKATHA3D   # ~/.youtube-mcp/tokens/pixelkatha3d.json  (more channels: YOUTUBE_TOKEN_<NAME>)
         sync: false
       - key: YOUTUBE_TOKEN_RIDDLESPIXO    # ~/.youtube-mcp/tokens/riddlespixo.json

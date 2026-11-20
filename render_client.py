@@ -3,7 +3,7 @@ Your PC talks to the Render server: make a voice, upload a video. Standard libra
 
   python render_client.py voice "नमस्ते दोस्तों!" out.wav [male|female|<voice name>]
   python render_client.py upload video.mp4 info.json        info.json = {"title", "description", "tags", "privacy", "category",
-                                                                       "account": "main"}   (or "accounts": ["pixelkatha3d", "riddlespixo"],
+                                                                       "account": "riddlespixo"}   (or "accounts": ["pixelkatha3d", "riddlespixo"],
                                                                        or "account": "all" = every connected channel)
   python render_client.py channels                           every channel the server can upload to
   python render_client.py social                             every Instagram account / Facebook Page on the server
@@ -65,7 +65,7 @@ def channels() -> dict:
 
 
 def upload(video: str, title: str, description: str = "", tags=(), privacy: str = "private",
-           category: str = "22", account: str = "main") -> dict:
+           category: str = "22", account: str = "") -> dict:
     """Send an MP4 to the server, which uploads it to one YouTube channel and deletes it. Returns {ok, url, ...}."""
     query = urllib.parse.urlencode({"title": title, "description": description,
                                     "tags": ",".join(tags), "privacy": privacy,
@@ -102,11 +102,13 @@ def social_upload(platform: str, name: str, video: str, info: dict) -> dict:
 
 
 def accounts_of(info: dict) -> list[str]:
-    """Channels named in an info.json: "accounts": [..], or "account": "x" / "all". Default ["main"]."""
-    names = info.get("accounts") or [info.get("account") or "main"]
+    """Channels named in an info.json: "accounts": [..], or "account": "x" / "all"."""
+    names = info.get("accounts") or [info.get("account") or ""]
+    if names == [""]:
+        raise RuntimeError('info.json needs "account": "pixelkatha3d" / "riddlespixo" / "scielifeindia" / "all"')
     if isinstance(names, str):
         names = [names]
-    if "all" in names:   # every channel once (main and pixelkatha3d may be the same channel)
+    if "all" in names:   # every channel once
         seen, names = set(), []
         for account, c in channels().items():
             if c.get("ok") and c["title"] not in seen:
