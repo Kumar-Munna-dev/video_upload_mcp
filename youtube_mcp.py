@@ -1,5 +1,11 @@
 """
-YouTube + voice server. Runs on Render; your PC makes the videos and calls it.
+YouTube + Instagram + Facebook + voice server. Runs on Render; your PC makes the videos and calls it.
+
+Instagram / Facebook: ONE MCP tool PER ACCOUNT, made from the Render environment variables
+  INSTAGRAM_ACCOUNT_<NAME> = {"user_id": "...", "access_token": "..."}   -> tool  instagram_<name>
+  FACEBOOK_PAGE_<NAME>     = {"page_id": "...", "access_token": "..."}   -> tool  facebook_<name>
+New account = add one variable on Render. Details in social.py.
+  POST /social/<instagram|facebook>/<name>?title=..&description=..&hashtags=a,b&video_type=auto   body = MP4
 
   python youtube_mcp.py auth main   one-time login on your PC -> ~/.youtube-mcp/tokens/main.json
                                    (one per channel: auth pixelkatha3d / auth riddlespixo / auth scielifeindia)
@@ -35,6 +41,7 @@ from googleapiclient.http import MediaFileUpload
 from mcp.server.mcpserver import MCPServer
 
 import sarvam_voice
+import social
 
 BASE = Path.home() / ".youtube-mcp"
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
@@ -185,6 +192,42 @@ def channel_info() -> dict:
     return {"ok": True, "channels": [channel(a) for a in accounts()]}
 
 
+# ---------------------------------------------------------------- Instagram + Facebook: one tool per account
+
+@mcp.tool()
+def social_accounts() -> dict:
+    """Every connected Instagram account and Facebook Page, and whether its token works.
+    Each one has its own upload tool: instagram_<name> or facebook_<name>."""
+    return {"ok": True, "accounts": [social.check(p, a) for p in ("instagram", "facebook") for a in social.accounts(p)]}
+
+
+def social_tool(platform: str, name: str):
+    """Make the upload tool of one account (e.g. instagram_riddlespixo)."""
+    def upload(title: str, description: str, hashtags: list[str], video_type: str = "auto") -> dict:
+        token = _new_token(UPLOADS, meta={"platform": platform, "account": name, "title": title,
+                                          "description": description, "hashtags": hashtags, "video_type": video_type})
+        url = f"{PUBLIC_URL}/u/{token}"
+        return {"ok": True, "upload_url": url,
+                "how": f'curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "{url}"'}
+
+    where = ("Instagram account @" + name + ". Every video becomes a Reel (also shown on the profile grid)."
+             if platform == "instagram" else
+             "Facebook Page '" + name + "'. Short video -> the Page's Reels section, long video -> a normal video post.")
+    upload.__doc__ = f"""Upload a video to the {where}
+    Step 1: call this tool -> you get a one-time upload_url (works 1 hour, once).
+    Step 2: send the MP4:  curl -X POST --data-binary @video.mp4 -H "Content-Type: video/mp4" "<upload_url>"
+            The answer is the link of the post.
+    title: a catchy title (first line of the caption). description: 1-3 lines about the video.
+    hashtags: 5-15 tags that fit the video, e.g. ["paheli", "riddle", "reels"] (# is added for you).
+    video_type: "auto" (up to 90 seconds = short, longer = long), or "short" / "long"."""
+    return upload
+
+
+for _platform in ("instagram", "facebook"):
+    for _name in social.accounts(_platform):
+        mcp.add_tool(social_tool(_platform, _name), name=f"{_platform}_{_name}")
+
+
 # ---------------------------------------------------------------- web server
 
 def run_http() -> None:
@@ -213,9 +256,15 @@ def run_http() -> None:
             with open(fd, "wb") as f:
                 async for chunk in request.stream():
                     f.write(chunk)
-            result = await asyncio.to_thread(upload_file, tmp, meta.get("title", ""), meta.get("description", ""),
-                                             meta.get("tags", []), meta.get("privacy", "private"),
-                                             meta.get("account", "main"), meta.get("category", "22"))
+            platform = meta.get("platform", "youtube")
+            if platform in social.UPLOADERS:      # Instagram / Facebook
+                result = await asyncio.to_thread(social.UPLOADERS[platform], meta["account"], tmp, meta.get("title", ""),
+                                                 meta.get("description", ""), meta.get("hashtags", []),
+                                                 meta.get("video_type", "auto"))
+            else:                                 # YouTube
+                result = await asyncio.to_thread(upload_file, tmp, meta.get("title", ""), meta.get("description", ""),
+                                                 meta.get("tags", []), meta.get("privacy", "private"),
+                                                 meta.get("account", "main"), meta.get("category", "22"))
         finally:
             Path(tmp).unlink(missing_ok=True)
         return JSONResponse(result, 200 if result["ok"] else 500)
@@ -227,6 +276,20 @@ def run_http() -> None:
         return await receive_and_upload(request, {"title": q.get("title", ""), "description": q.get("description", ""),
                                                   "tags": tags, "privacy": q.get("privacy", "private"),
                                                   "account": q.get("account", "main"), "category": q.get("category", "22")})
+
+    async def social_upload(request):
+        """POST /social/<platform>/<name>?title=..&description=..&hashtags=a,b&video_type=auto  body = MP4."""
+        platform, name, q = request.path_params["platform"], request.path_params["name"], request.query_params
+        if platform not in social.UPLOADERS or name not in social.accounts(platform):
+            return JSONResponse({"ok": False, "error": f"unknown {platform} account '{name}'"}, 404)
+        hashtags = [h.strip() for h in q.get("hashtags", "").split(",") if h.strip()]
+        return await receive_and_upload(request, {"platform": platform, "account": name, "title": q.get("title", ""),
+                                                  "description": q.get("description", ""), "hashtags": hashtags,
+                                                  "video_type": q.get("video_type", "auto")})
+
+    async def social_list(request):
+        """Every Instagram / Facebook account and whether its token works."""
+        return JSONResponse(await asyncio.to_thread(social_accounts))
 
     async def upload_by_link(request):
         """One-time link from the upload_link tool: no key needed."""
@@ -250,6 +313,8 @@ def run_http() -> None:
     app.router.routes += [Route("/voice", voice, methods=["POST"]), Route("/upload", upload, methods=["POST"]),
                           Route("/u/{token}", upload_by_link, methods=["POST"]),
                           Route("/channels", channels, methods=["GET"]),
+                          Route("/social", social_list, methods=["GET"]),
+                          Route("/social/{platform}/{name}", social_upload, methods=["POST"]),
                           Route("/v/{token}.wav", voice_file, methods=["GET"])]
 
     async def check_key(scope, receive, send):

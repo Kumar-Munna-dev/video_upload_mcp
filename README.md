@@ -1,4 +1,4 @@
-# YouTube + Voice server
+# YouTube + Instagram + Facebook + Voice server
 
 Videos are made **on your PC**. This small server on **Render** does only two jobs:
 
@@ -12,6 +12,19 @@ Claude can also use it as an MCP **connector** at `/mcp`, so **any chat** (Code 
 - `upload_link(title, description, tags, privacy)` → a one-time link; the chat sends the MP4 with
   `curl -X POST --data-binary @video.mp4 "<link>"`. The server uploads it to YouTube and deletes it.
 - `upload_video(video_url, ...)`, `channel_info()`
+- **Instagram / Facebook: one tool per account**, e.g. `instagram_riddlespixo(title, description, hashtags, video_type)`
+  → a one-time link; send the MP4 with the same `curl` command. `social_accounts()` lists them all.
+  - Instagram: every video is a Reel (short or long; long ones also show on the profile grid).
+  - Facebook Page: short (≤ 90 s) → Reels section, long → normal video post. `video_type`: auto | short | long.
+  - Caption = title + description + #hashtags (all three are required).
+
+### Add an Instagram account / Facebook Page (any time)
+On Render → Environment, add ONE variable, then the server restarts and the new tool appears:
+- `INSTAGRAM_ACCOUNT_<NAME>` = `{"user_id": "1784...", "access_token": "EAA..."}` → tool `instagram_<name>`
+- `FACEBOOK_PAGE_<NAME>` = `{"page_id": "...", "access_token": "<Page token>"}` → tool `facebook_<name>`
+
+The Instagram user ID and token come from the Meta app: Use cases → Instagram API → API setup with Unified login →
+Generate access tokens (see `INSTAGRAM_SETUP.md`).
 
 To add it on claude.ai, go to Settings → Connectors → Add custom connector and use the URL
 `https://youtube-mcp-5wk1.onrender.com/mcp?key=<API_KEY>`.
@@ -20,6 +33,8 @@ All secrets live on Render. The PC only needs the API key.
 ## Files
 - `youtube_mcp.py`: the server (YouTube upload, MCP, web endpoints)
 - `sarvam_voice.py`: Sarvam AI text-to-speech (used by the server)
+- `social.py`: Instagram + Facebook uploads (used by the server)
+- `instagram_upload.py`: upload straight from the PC to Instagram, without the server (uses `instagram.json`)
 - `render_client.py`: used on the PC to call the server
 - `render.yaml`: Render settings
 
@@ -31,6 +46,10 @@ python render_client.py voice "नमस्ते दोस्तों!" hello.
 python render_client.py upload video.mp4 info.json
 ```
 `info.json`: `{"title": "... #shorts", "description": "...", "tags": ["shorts"], "privacy": "private"}`
+```bash
+python render_client.py social instagram riddlespixo video.mp4 insta.json
+```
+`insta.json`: `{"title": "...", "description": "...", "hashtags": ["paheli", "riddle"], "video_type": "auto"}`
 The API key goes in `apikey.txt` next to `render_client.py`.
 
 ## Render setup (once)

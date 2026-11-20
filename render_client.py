@@ -6,6 +6,10 @@ Your PC talks to the Render server: make a voice, upload a video. Standard libra
                                                                        "account": "main"}   (or "accounts": ["pixelkatha3d", "riddlespixo"],
                                                                        or "account": "all" = every connected channel)
   python render_client.py channels                           every channel the server can upload to
+  python render_client.py social                             every Instagram account / Facebook Page on the server
+  python render_client.py social instagram riddlespixo video.mp4 info.json
+                                                             info.json = {"title", "description", "hashtags": [..],
+                                                                          "video_type": "auto"}  (auto|short|long)
 
 Server: env YT_SERVER (default below). API key: env API_KEY, or the file apikey.txt next to this script,
 or ~/.youtube-mcp/api_key.txt. No YouTube token or Sarvam key is needed on the PC.
@@ -70,6 +74,25 @@ def upload(video: str, title: str, description: str = "", tags=(), privacy: str 
         return json.loads(_post(f"/upload?{query}", f, "video/mp4", size))
 
 
+def social_list() -> dict:
+    """Every Instagram account and Facebook Page on the server, and whether its token works."""
+    req = urllib.request.Request(SERVER + "/social", headers={"Authorization": f"Bearer {api_key()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Server error {e.code}: {e.read().decode(errors='replace')[:300]}") from None
+
+
+def social_upload(platform: str, name: str, video: str, info: dict) -> dict:
+    """Send an MP4 to the server, which posts it on one Instagram account / Facebook Page. Returns {ok, url}."""
+    query = urllib.parse.urlencode({"title": info.get("title", ""), "description": info.get("description", ""),
+                                    "hashtags": ",".join(info.get("hashtags", [])),
+                                    "video_type": info.get("video_type", "auto")})
+    with open(video, "rb") as f:
+        return json.loads(_post(f"/social/{platform}/{name}?{query}", f, "video/mp4", os.path.getsize(video)))
+
+
 def accounts_of(info: dict) -> list[str]:
     """Channels named in an info.json: "accounts": [..], or "account": "x" / "all". Default ["main"]."""
     names = info.get("accounts") or [info.get("account") or "main"]
@@ -107,6 +130,11 @@ if __name__ == "__main__":
     elif len(a) == 3 and a[0] == "upload":
         info = json.loads(Path(a[2]).read_text(encoding="utf-8"))
         print(json.dumps(upload_info(a[1], info), ensure_ascii=False))
+    elif a == ["social"]:
+        print(json.dumps(social_list(), ensure_ascii=False, indent=2))
+    elif len(a) == 5 and a[0] == "social":
+        info = json.loads(Path(a[4]).read_text(encoding="utf-8"))
+        print(json.dumps(social_upload(a[1], a[2], a[3], info), ensure_ascii=False))
     elif a == ["channels"]:
         print(json.dumps(channels(), ensure_ascii=False, indent=2))
     else:

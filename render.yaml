@@ -19,5 +19,12 @@ services:
         sync: false
       - key: YOUTUBE_TOKEN_SCIELIFEINDIA  # ~/.youtube-mcp/tokens/scielifeindia.json
         sync: false
+      - key: INSTAGRAM_ACCOUNT_RIDDLESPIXO    # {"user_id": "...", "access_token": "..."}  (more: INSTAGRAM_ACCOUNT_<NAME>)
+        sync: false
+      - key: INSTAGRAM_ACCOUNT_PIXELKATHA3D
+        sync: false
+      - key: INSTAGRAM_ACCOUNT_SCIELIFEINDIA
+        sync: false
+      # Facebook Pages (optional): FACEBOOK_PAGE_<NAME> = {"page_id": "...", "access_token": "<Page token>"}
       - key: SARVAM_API_KEY     # Sarvam AI key, for /voice
         sync: false
