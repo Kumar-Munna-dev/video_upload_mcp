@@ -107,11 +107,18 @@ def _answer(response: httpx.Response) -> dict:
 
 
 def _send_file(url: str, token: str, path: str) -> dict:
-    """Send the whole MP4 to Meta's upload server (rupload.facebook.com)."""
+    """Send the whole MP4 to Meta's upload server (rupload.facebook.com). Tries 3 times: it sometimes
+    fails for a moment ("ProcessingFailedError") and works on the next try."""
     size = os.path.getsize(path)
-    with open(path, "rb") as f:
-        return _answer(httpx.post(url, content=f, timeout=900, headers={
-            "Authorization": f"OAuth {token}", "offset": "0", "file_size": str(size)}))
+    for attempt in range(3):
+        try:
+            with open(path, "rb") as f:
+                return _answer(httpx.post(url, content=f, timeout=900, headers={
+                    "Authorization": f"OAuth {token}", "offset": "0", "file_size": str(size)}))
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(15)
 
 
 # ---------------------------------------------------------------- Instagram
