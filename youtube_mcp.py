@@ -46,8 +46,12 @@ import social
 
 BASE = Path.home() / ".youtube-mcp"
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
-PUBLIC_URL = os.environ.get("RENDER_EXTERNAL_URL", "http://127.0.0.1:8080").rstrip("/")   # Render sets this
+# The server's own public address (Instagram downloads covers from it). Render sets RENDER_EXTERNAL_URL;
+# anywhere else set PUBLIC_URL.
+PUBLIC_URL = (os.environ.get("PUBLIC_URL") or os.environ.get("RENDER_EXTERNAL_URL")
+              or "http://127.0.0.1:8080").rstrip("/")
 LINK_LIFE = 3600                     # seconds a voice / upload link stays valid
+STORE_MAX_BYTES = 120_000_000        # max RAM for kept voices / covers per store (free Render server = 512 MB)
 VOICES: dict[str, dict] = {}         # token -> {"wav", "expires"}   (in memory, max 20)
 UPLOADS: dict[str, dict] = {}        # token -> {"meta", "expires"}  (one-time upload links)
 COVERS: dict[str, dict] = {}         # token -> {"jpg", "expires"}   (cover images; Instagram downloads them from /c/)
@@ -60,8 +64,10 @@ def _new_token(store: dict, **item) -> str:
     now = time.time()
     for k in [k for k, v in store.items() if v["expires"] < now]:
         store.pop(k)
-    while len(store) >= 20:
-        store.pop(next(iter(store)))
+    def size(v):
+        return sum(len(x) for x in v.values() if isinstance(x, bytes))
+    while store and (len(store) >= 20 or sum(size(v) for v in store.values()) + size(item) > STORE_MAX_BYTES):
+        store.pop(next(iter(store)))         # forget the oldest
     token = secrets.token_urlsafe(24)
     store[token] = {**item, "expires": now + LINK_LIFE}
     return token
@@ -257,8 +263,8 @@ def run_http() -> None:
 
     async def voice(request):
         """JSON {text, speaker, pace} -> WAV."""
-        data = await request.json()
         try:
+            data = await request.json()
             wav = await asyncio.to_thread(sarvam_voice.speak, data["text"], data.get("speaker", "male"),
                                           float(data.get("pace", 1.0)))
         except Exception as e:
@@ -272,6 +278,8 @@ def run_http() -> None:
             with open(fd, "wb") as f:
                 async for chunk in request.stream():
                     f.write(chunk)
+            if Path(tmp).stat().st_size < 1000:
+                return JSONResponse({"ok": False, "error": "no video received: check the file path after @"}, 400)
             platform = meta.get("platform", "youtube")
             cover_item = _take(COVERS, meta["cover"]) if meta.get("cover") else None
             cover = cover_item["jpg"] if cover_item else None
@@ -345,10 +353,14 @@ def run_http() -> None:
 
     async def upload_by_link(request):
         """One-time link from the upload_link tool: no key needed."""
-        item = _take(UPLOADS, request.path_params["token"], once=True)
+        token = request.path_params["token"]
+        item = _take(UPLOADS, token, once=True)
         if not item:
             return JSONResponse({"ok": False, "error": "link expired or already used: call upload_link again"}, 404)
-        return await receive_and_upload(request, item["meta"])
+        answer = await receive_and_upload(request, item["meta"])
+        if answer.status_code == 400:         # no video arrived: the link may be used again
+            UPLOADS[token] = item
+        return answer
 
     async def channels(request):
         """Every account with a token, and its channel."""
@@ -361,6 +373,11 @@ def run_http() -> None:
             return JSONResponse({"ok": False, "error": "voice link expired: call make_voice again"}, 404)
         return Response(item["wav"], media_type="audio/wav")
 
+    async def health(request):
+        """GET /health (no key): is the server awake + which accounts are set (no tokens)."""
+        return JSONResponse({"ok": True, "youtube": accounts(), "instagram": social.accounts("instagram"),
+                             "facebook": social.accounts("facebook"), "meta_api": social.API_VERSION})
+
     app = mcp.streamable_http_app(stateless_http=True, host="0.0.0.0")
     app.router.routes += [Route("/voice", voice, methods=["POST"]), Route("/upload", upload, methods=["POST"]),
                           Route("/u/{token}", upload_by_link, methods=["POST"]),
@@ -370,7 +387,8 @@ def run_http() -> None:
                           Route("/channels", channels, methods=["GET"]),
                           Route("/social", social_list, methods=["GET"]),
                           Route("/social/{platform}/{name}", social_upload, methods=["POST"]),
-                          Route("/v/{token}.wav", voice_file, methods=["GET"])]
+                          Route("/v/{token}.wav", voice_file, methods=["GET"]),
+                          Route("/health", health, methods=["GET"])]
 
     async def check_key(scope, receive, send):
         """Allow only requests with  ?key=API_KEY  or  Authorization: Bearer API_KEY.
@@ -380,7 +398,7 @@ def run_http() -> None:
             # key inside the path: https://.../<API_KEY>/mcp  (for connectors that drop ?key=)
             scope = {**scope, "path": scope["path"][len(api_key) + 1:], "raw_path": None}
             return await app(scope, receive, send)
-        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/c/", "/.well-known/")):
+        if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/c/", "/.well-known/", "/health")):
             headers = dict(scope["headers"])
             query = scope.get("query_string", b"").decode()
             if headers.get(b"authorization", b"").decode() != f"Bearer {api_key}" \

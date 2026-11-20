@@ -129,8 +129,7 @@ def upload_info(video: str, info: dict) -> dict:
     return {"ok": all(r.get("ok") for r in results.values()), "results": results}
 
 
-if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8")
+def main() -> None:
     a = sys.argv[1:]
     if len(a) >= 3 and a[0] == "voice":
         Path(a[2]).write_bytes(voice(a[1], a[3] if len(a) > 3 else "male"))
@@ -147,3 +146,12 @@ if __name__ == "__main__":
         print(json.dumps(channels(), ensure_ascii=False, indent=2))
     else:
         print(__doc__)
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        main()
+    except Exception as e:      # show the reason as JSON, not a long Python traceback
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        sys.exit(1)

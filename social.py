@@ -21,8 +21,11 @@ import time
 
 import httpx
 
-API_VERSION = "v21.0"
+# Meta retires old API versions after ~2 years. Newer version = change META_API_VERSION on Render (no code change).
+API_VERSION = os.environ.get("META_API_VERSION", "v27.0")
 SHORT_MAX_SECONDS = 90
+CAPTION_MAX = 2200        # Instagram: max caption length
+HASHTAGS_MAX = 30         # Instagram: max hashtags in one caption
 PREFIX = {"instagram": "INSTAGRAM_ACCOUNT_", "facebook": "FACEBOOK_PAGE_"}
 
 
@@ -56,9 +59,19 @@ def account(platform: str, name: str) -> dict:
 # ---------------------------------------------------------------- small helpers
 
 def make_caption(title: str, description: str, hashtags: list[str]) -> str:
-    """Title, description and #hashtags joined into one caption."""
-    tags = " ".join("#" + h.strip().lstrip("#").replace(" ", "") for h in hashtags or [] if h.strip())
-    return "\n\n".join(part for part in (title.strip(), description.strip(), tags) if part)
+    """Title, description and #hashtags joined into one caption (max 30 hashtags, 2200 characters)."""
+    if isinstance(hashtags, str):                      # "a, b c" also works
+        hashtags = hashtags.replace(",", " ").split()
+    tags, seen = [], set()
+    for h in hashtags or []:
+        tag = h.strip().lstrip("#").replace(" ", "")
+        if tag and tag.lower() not in seen:            # no empty or repeated tags
+            seen.add(tag.lower())
+            tags.append("#" + tag)
+    tag_text = " ".join(tags[:HASHTAGS_MAX])
+    room = CAPTION_MAX - len(tag_text) - 4             # keep the hashtags, shorten the description if needed
+    text = "\n\n".join(part for part in (title.strip(), description.strip()) if part)[:max(room, 0)]
+    return "\n\n".join(part for part in (text, tag_text) if part)
 
 
 def video_seconds(path: str) -> float:
@@ -99,6 +112,7 @@ def check_cover(cover: bytes | None) -> None:
 
 def is_short(path: str, video_type: str = "auto") -> bool:
     """video_type "short" / "long" decides; "auto" = up to 90 seconds is short."""
+    video_type = (video_type or "auto").strip().lower()
     if video_type in ("short", "long"):
         return video_type == "short"
     return video_seconds(path) <= SHORT_MAX_SECONDS
@@ -163,11 +177,21 @@ def instagram_upload(name: str, path: str, title: str, description: str, hashtag
             time.sleep(10)
         else:
             raise RuntimeError("Instagram took too long to process the video")
-        # 4. publish
-        post = _answer(httpx.post(f"{api}/{user}/media_publish", timeout=60, data={
-            "creation_id": box["id"], "access_token": token}))
-        link = _answer(httpx.get(f"{api}/{post['id']}", timeout=60, params={
-            "fields": "permalink", "access_token": token})).get("permalink", "")
+        # 4. publish (try 3 times: right after processing Instagram sometimes says "not ready yet")
+        for attempt in range(3):
+            try:
+                post = _answer(httpx.post(f"{api}/{user}/media_publish", timeout=60, data={
+                    "creation_id": box["id"], "access_token": token}))
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(15)
+        try:     # the post is live now; a missing link is not an error
+            link = _answer(httpx.get(f"{api}/{post['id']}", timeout=60, params={
+                "fields": "permalink", "access_token": token})).get("permalink", "")
+        except Exception:
+            link = ""
         return {"ok": True, "platform": "instagram", "account": name, "url": link, "media_id": post["id"],
                 "posted_as": "reel (short)" if short else "reel (long, also on profile grid)",
                 "cover": "set" if cover_url else "first frame (no cover sent)"}

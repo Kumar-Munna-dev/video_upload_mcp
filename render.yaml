@@ -26,5 +26,7 @@ services:
       - key: INSTAGRAM_ACCOUNT_SCIELIFEINDIA
         sync: false
       # Facebook Pages (optional): FACEBOOK_PAGE_<NAME> = {"page_id": "...", "access_token": "<Page token>"}
+      - key: META_API_VERSION   # Instagram/Facebook API version; default v27.0, raise it when Meta retires it
+        value: v27.0
       - key: SARVAM_API_KEY     # Sarvam AI key, for /voice
         sync: false

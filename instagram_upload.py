@@ -33,7 +33,7 @@ from pathlib import Path
 # Agar aapka token "Facebook Login" wala hai (EAA... se shuru), to host "graph.facebook.com" kar do
 # (instagram.json mein "host": "graph.facebook.com" likh kar).
 DEFAULT_HOST = "graph.instagram.com"
-API_VERSION = "v21.0"
+API_VERSION = "v27.0"     # Meta retires old versions after ~2 years; v21.0 is already retired
 
 CONFIG_FILE = Path(__file__).with_name("instagram.json")
 

@@ -62,4 +62,12 @@ The API key goes in `apikey.txt` next to `render_client.py`.
 3. Get the YouTube token on your PC once: `python youtube_mcp.py auth main`. This needs `~/.youtube-mcp/client_secret.json`, the Google OAuth "Desktop app" JSON.
 
 The free plan sleeps after 15 minutes idle; the first request then takes ~50 s.
+`GET /health` (no key) shows if the server is awake and which accounts are set (no tokens).
+
+### Keeping it working in the future
+- **Meta API version**: Meta retires old versions after ~2 years. The server uses `v27.0`; to move to a newer one,
+  set `META_API_VERSION` (e.g. `v28.0`) on Render. No code change.
+- **Token stopped working?** `social_accounts` (MCP) or `python render_client.py social` shows which one. Make a new
+  token (see `INSTAGRAM_SETUP.md`) and replace that one variable on Render.
+- **Moving off Render?** Set `PUBLIC_URL` to the server's public address (Instagram downloads covers from it).
 If the Google consent screen is in "Testing" mode, the token expires every 7 days. Publish it ("In production") to stop that.
