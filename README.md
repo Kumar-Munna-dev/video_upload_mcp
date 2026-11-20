@@ -72,3 +72,15 @@ The free plan sleeps after 15 minutes idle; the first request then takes ~50 s.
   token (see `INSTAGRAM_SETUP.md`) and replace that one variable on Render.
 - **Moving off Render?** Set `PUBLIC_URL` to the server's public address (Instagram downloads covers from it).
 If the Google consent screen is in "Testing" mode, the token expires every 7 days. Publish it ("In production") to stop that.
+
+## Google Cloud Run (private)
+The same code also runs on Google Cloud Run: service `autimate-mcp` (project `project-5da1a3a3-b570-4755-8f1`,
+region `asia-south1`). Every push to `main` builds the `Dockerfile` and deploys it automatically (Cloud Build trigger).
+- URL: `https://autimate-mcp-559325411060.asia-south1.run.app`. It is **private**: only Google accounts with access
+  can call it (others get 403), plus the API key.
+- From the PC: `set YT_SERVER=https://autimate-mcp-559325411060.asia-south1.run.app` then use `render_client.py` as usual;
+  it uses your `gcloud auth login` automatically.
+- Settings: HTTP/2 end-to-end (videos over 32 MB), timeout 3600 s, max 1 instance, 1 GiB, env vars like on Render,
+  plus `HTTP2=1`, `PUBLIC_URL`, `COVER_LINKS=off` (Instagram can't download covers from a private server, so
+  Instagram posts get the first frame; Facebook and YouTube covers still work).
+- Change a token: `gcloud run services update autimate-mcp --region asia-south1 --update-env-vars NAME=value`.
