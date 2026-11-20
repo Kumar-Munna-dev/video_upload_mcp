@@ -290,7 +290,9 @@ def run_http() -> None:
             platform = meta.get("platform", "youtube")
             cover_item = _take(COVERS, meta["cover"]) if meta.get("cover") else None
             cover = cover_item["jpg"] if cover_item else None
-            cover_url = f"{PUBLIC_URL}/c/{meta['cover']}.jpg" if cover_item else ""
+            # Instagram downloads the cover from this server; a private server (COVER_LINKS=off) can't offer that
+            covers_public = os.environ.get("COVER_LINKS", "on") != "off"
+            cover_url = f"{PUBLIC_URL}/c/{meta['cover']}.jpg" if cover_item and covers_public else ""
             if platform in social.UPLOADERS:      # Instagram / Facebook
                 result = await asyncio.to_thread(social.UPLOADERS[platform], meta["account"], tmp, meta.get("title", ""),
                                                  meta.get("description", ""), meta.get("hashtags", []),
@@ -408,7 +410,10 @@ def run_http() -> None:
         if scope["type"] == "http" and not scope["path"].startswith(("/u/", "/v/", "/c/", "/.well-known/", "/health")):
             headers = dict(scope["headers"])
             query = scope.get("query_string", b"").decode()
+            # key in "Authorization: Bearer <key>", "X-API-Key: <key>" (private Cloud Run: Authorization
+            # then carries the Google login) or ?key=<key>
             if headers.get(b"authorization", b"").decode() != f"Bearer {api_key}" \
+                    and headers.get(b"x-api-key", b"").decode() != api_key \
                     and f"key={api_key}" not in query.split("&"):
                 return await JSONResponse({"error": "wrong or missing API key"}, 401)(scope, receive, send)
         await app(scope, receive, send)

@@ -194,7 +194,8 @@ def instagram_upload(name: str, path: str, title: str, description: str, hashtag
             link = ""
         return {"ok": True, "platform": "instagram", "account": name, "url": link, "media_id": post["id"],
                 "posted_as": "reel (short)" if short else "reel (long, also on profile grid)",
-                "cover": "set" if cover_url else "first frame (no cover sent)"}
+                "cover": "set" if cover_url else ("not set: the server is private, Instagram cannot download it"
+                                                  if cover else "first frame (no cover sent)")}
     except Exception as e:
         return {"ok": False, "platform": "instagram", "account": name, "error": str(e)}
 

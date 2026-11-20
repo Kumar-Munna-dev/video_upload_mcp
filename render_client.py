@@ -12,7 +12,8 @@ Your PC talks to the Render server: make a voice, upload a video. Standard libra
                                                                           "video_type": "auto",  (auto|short|long)
                                                                           "cover": "cover.jpg"}  (optional thumbnail, JPG 9:16)
 
-Server: env YT_SERVER (default below). API key: env API_KEY, or the file apikey.txt next to this script,
+Server: env YT_SERVER (default below). Google Cloud Run (private):
+  set YT_SERVER=https://autimate-mcp-559325411060.asia-south1.run.app  (uses your  gcloud auth login). API key: env API_KEY, or the file apikey.txt next to this script,
 or ~/.youtube-mcp/api_key.txt. No YouTube token or Sarvam key is needed on the PC.
 """
 import json
@@ -36,8 +37,27 @@ def api_key() -> str:
     return key
 
 
+_GOOGLE_TOKEN = ""
+
+
+def auth_headers() -> dict:
+    """Render: the API key. Private Google Cloud Run (*.run.app): your gcloud login + the API key."""
+    global _GOOGLE_TOKEN
+    if ".run.app" not in SERVER:
+        return {"Authorization": f"Bearer {api_key()}"}
+    if not _GOOGLE_TOKEN:
+        import shutil
+        import subprocess
+        gcloud = shutil.which("gcloud")
+        if not gcloud:
+            raise RuntimeError("Cloud Run is private: install gcloud and run  gcloud auth login")
+        _GOOGLE_TOKEN = subprocess.run([gcloud, "auth", "print-identity-token"], capture_output=True,
+                                       text=True, check=True).stdout.strip()
+    return {"Authorization": f"Bearer {_GOOGLE_TOKEN}", "X-API-Key": api_key()}
+
+
 def _post(path: str, data, content_type: str, length: int | None = None) -> bytes:
-    headers = {"Authorization": f"Bearer {api_key()}", "Content-Type": content_type}
+    headers = {**auth_headers(), "Content-Type": content_type}
     if length is not None:
         headers["Content-Length"] = str(length)
     req = urllib.request.Request(SERVER + path, data=data, headers=headers, method="POST")
@@ -56,7 +76,7 @@ def voice(text: str, speaker: str = "male", pace: float = 1.0) -> bytes:
 
 def channels() -> dict:
     """{account: {ok, title, subscribers, videos}} for every channel the server has a token for."""
-    req = urllib.request.Request(SERVER + "/channels", headers={"Authorization": f"Bearer {api_key()}"})
+    req = urllib.request.Request(SERVER + "/channels", headers=auth_headers())
     try:
         with urllib.request.urlopen(req, timeout=300) as r:
             return json.loads(r.read())
@@ -77,7 +97,7 @@ def upload(video: str, title: str, description: str = "", tags=(), privacy: str 
 
 def social_list() -> dict:
     """Every Instagram account and Facebook Page on the server, and whether its token works."""
-    req = urllib.request.Request(SERVER + "/social", headers={"Authorization": f"Bearer {api_key()}"})
+    req = urllib.request.Request(SERVER + "/social", headers=auth_headers())
     try:
         with urllib.request.urlopen(req, timeout=300) as r:
             return json.loads(r.read())
