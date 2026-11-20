@@ -17,6 +17,8 @@ Server **do ghar** mein rehta hai (dono mein same code):
 | 🟣 **Render** | `https://youtube-mcp-5wk1.onrender.com` | jiske paas **API key** ho (koi bhi AI) |
 | 🔵 **Google Cloud Run** | `https://autimate-mcp-559325411060.asia-south1.run.app` | sirf aapka **Google login** + API key (private) |
 
+> 📘 **Poori detail chahiye?** [GUIDE.md](GUIDE.md) padho: setup zero se, saare tools/endpoints, code badalna, limits, problems.
+
 > 🔑 **API key = server ka darwaze ki chaabi.** Yeh [`apikey.txt`](apikey.txt) mein hai (sirf aapke PC par).
 > Ise kabhi GitHub, chat ya screenshot mein mat daalna. Jiske paas chaabi, woh aapke channels par post kar sakta hai.
 

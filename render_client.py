@@ -85,11 +85,12 @@ def channels() -> dict:
 
 
 def upload(video: str, title: str, description: str = "", tags=(), privacy: str = "private",
-           category: str = "22", account: str = "") -> dict:
-    """Send an MP4 to the server, which uploads it to one YouTube channel and deletes it. Returns {ok, url, ...}."""
+           category: str = "22", account: str = "", cover: str = "") -> dict:
+    """Send an MP4 (and optional JPG cover) to the server, which uploads it to one YouTube channel and deletes it."""
     query = urllib.parse.urlencode({"title": title, "description": description,
                                     "tags": ",".join(tags), "privacy": privacy,
-                                    "category": category, "account": account})
+                                    "category": category, "account": account,
+                                    "cover": send_cover(cover) if cover else ""})
     size = os.path.getsize(video)
     with open(video, "rb") as f:
         return json.loads(_post(f"/upload?{query}", f, "video/mp4", size))
@@ -143,7 +144,8 @@ def upload_info(video: str, info: dict) -> dict:
     for account in accounts_of(info):
         try:
             results[account] = upload(video, info["title"], info.get("description", ""), info.get("tags", []),
-                                      info.get("privacy", "private"), str(info.get("category", "22")), account)
+                                      info.get("privacy", "private"), str(info.get("category", "22")), account,
+                                      info.get("cover", ""))
         except Exception as e:
             results[account] = {"ok": False, "error": str(e)}
     if len(results) == 1:
